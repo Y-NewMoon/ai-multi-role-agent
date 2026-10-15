@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: roleplay
+          POSTGRES_PASSWORD: roleplay
+          POSTGRES_DB: roleplay
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U roleplay"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://roleplay:roleplay@localhost:5432/roleplay
+      TEST_DATABASE_URL: postgresql://roleplay:roleplay@localhost:5432/roleplay_test
+      LLM_API_KEY: dummy
+      # 测试用 FakeEmbeddings，无需 sentence-transformers/torch（约 2.5GB）。
+      # 该变量同时作用于 `uv sync` 与 `uv run` 的隐式同步。
+      UV_NO_GROUP: embeddings
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Create test database
+        run: |
+          uv run python -c "import psycopg; c = psycopg.connect('postgresql://roleplay:roleplay@localhost:5432/roleplay', autocommit=True); c.execute('CREATE DATABASE roleplay_test'); c.close()"
+
+      - name: Migrate main database
+        run: uv run alembic upgrade head
+
+      - name: Migrate test database
+        run: uv run alembic upgrade head
+        env:
+          DATABASE_URL: postgresql://roleplay:roleplay@localhost:5432/roleplay_test
+
+      - name: Run tests
+        run: uv run pytest -q

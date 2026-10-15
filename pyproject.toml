@@ -1,0 +1,40 @@
+[project]
+name = "ai-agent"
+version = "0.0.1"
+description = "基于 LangGraph 的多角色扮演聊天助手"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.20.0",
+    "fastapi>=0.143.0",
+    "greenlet>=3.5.6",
+    "langgraph",
+    "langgraph-checkpoint-postgres",
+    "openai>=3.28.0",
+    "psycopg[binary,pool]",
+    "pydantic-settings",
+    "python-dotenv",
+    "python-multipart>=0.0.9",
+    "sqlalchemy[asyncio]>=2.1.4",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[tool.uv]
+package = false
+# embeddings（sentence-transformers + torch，约 2.5GB）默认安装，
+# 保证本地跑服务时本地嵌入可用；CI 用 `--no-group embeddings` 跳过以瘦身。
+default-groups = ["dev", "embeddings"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]
+# 可选的重型运行时依赖：仅本地/生产跑真实本地嵌入时需要，测试用 FakeEmbeddings 不需要。
+embeddings = [
+    "sentence-transformers>=6.1.0",
+]
