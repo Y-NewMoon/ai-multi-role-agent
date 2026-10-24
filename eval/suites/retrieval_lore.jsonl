@@ -1,0 +1,40 @@
+{"id": "rl-001", "agent_id": 1, "query": "陆景明是谁？他当年是怎么起家的？", "expect_refs": ["yunqi_tea:01"], "difficulty": "easy", "tags": ["专名"], "synthetic": false}
+{"id": "rl-002", "agent_id": 1, "query": "云栖雪芽是什么茶？采摘上有什么讲究？", "expect_refs": ["yunqi_tea:02"], "difficulty": "easy", "tags": ["专名", "数字"], "synthetic": false}
+{"id": "rl-003", "agent_id": 1, "query": "云栖茶庄那柄紫砂壶叫什么名字？壶身上有什么痕迹？", "expect_refs": ["yunqi_tea:03"], "difficulty": "easy", "tags": ["专名"], "synthetic": false}
+{"id": "rl-004", "agent_id": 1, "query": "陆明澜的记性好到什么地步？", "expect_refs": ["yunqi_tea:04"], "difficulty": "easy", "tags": ["专名"], "synthetic": false}
+{"id": "rl-005", "agent_id": 1, "query": "跑堂的阿福是什么来历？他有什么习惯？", "expect_refs": ["yunqi_tea:05"], "difficulty": "medium", "tags": ["专名"], "synthetic": false}
+{"id": "rl-006", "agent_id": 1, "query": "云栖茶庄的茶点有哪四样？", "expect_refs": ["yunqi_tea:06"], "difficulty": "easy", "tags": ["专名", "数字"], "synthetic": false}
+{"id": "rl-007", "agent_id": 1, "query": "说书人周先生为什么常来茶庄？他坐在哪张桌子？", "expect_refs": ["yunqi_tea:07"], "difficulty": "medium", "tags": ["专名"], "synthetic": false}
+{"id": "rl-008", "agent_id": 1, "query": "云栖茶庄后山那株古茶树有什么传说？", "expect_refs": ["yunqi_tea:08"], "difficulty": "medium", "tags": ["专名"], "synthetic": false}
+{"id": "rl-009", "agent_id": 1, "query": "云栖茶庄的「三不卖」是哪三样？", "expect_refs": ["yunqi_tea:09"], "difficulty": "medium", "tags": ["专名", "数字"], "synthetic": false}
+{"id": "rl-010", "agent_id": 1, "query": "云栖茶庄在城南的分号叫什么？由谁打理？", "expect_refs": ["yunqi_tea:10"], "difficulty": "easy", "tags": ["专名"], "synthetic": false}
+{"id": "rl-011", "agent_id": 1, "query": "沈敬亭是青溪镇哪一家的人？他家以什么起家？", "expect_refs": ["qingxi_town:02"], "difficulty": "easy", "tags": ["专名"], "synthetic": false}
+{"id": "rl-012", "agent_id": 1, "query": "画师吴鹤舟的《青溪长卷》画了什么？如今藏在哪儿？", "expect_refs": ["qingxi_town:08"], "difficulty": "medium", "tags": ["专名"], "synthetic": false}
+{"id": "rl-013", "agent_id": 1, "query": "他定下的「三不卖」规矩具体是哪三条？", "expect_refs": ["yunqi_tea:09"], "difficulty": "medium", "tags": ["指代"], "synthetic": false}
+{"id": "rl-014", "agent_id": 1, "query": "她的记性好到什么地步？连谁爱喝浓茶都记得吗？", "expect_refs": ["yunqi_tea:04"], "difficulty": "medium", "tags": ["指代"], "synthetic": false}
+{"id": "rl-015", "agent_id": 1, "query": "它为什么有一处窑裂？为什么一直不肯补？", "expect_refs": ["yunqi_tea:03"], "difficulty": "hard", "tags": ["指代"], "synthetic": false}
+{"id": "rl-016", "agent_id": 1, "query": "他的账目记得怎么样？几十年的旧账还能对上吗？", "expect_refs": ["yunqi_tea:05"], "difficulty": "medium", "tags": ["指代"], "synthetic": false}
+{"id": "rl-017", "agent_id": 1, "query": "他们只做熟客生意吗？门上挂的是什么牌子？", "expect_refs": ["yunqi_tea:10"], "difficulty": "medium", "tags": ["指代"], "synthetic": false}
+{"id": "rl-018", "agent_id": 1, "query": "他离镇的时候给茶庄留下了什么规矩？", "expect_refs": ["yunqi_tea:07"], "difficulty": "medium", "tags": ["指代"], "synthetic": false}
+{"id": "rl-019", "agent_id": 1, "query": "那几天镇上有什么热闹？灯船一直亮到什么时候？", "expect_refs": ["qingxi_town:06"], "difficulty": "hard", "tags": ["指代"], "synthetic": false}
+{"id": "rl-020", "agent_id": 1, "query": "它为什么在雨天格外滑？桥栏上刻着什么东西？", "expect_refs": ["qingxi_town:04"], "difficulty": "medium", "tags": ["指代"], "synthetic": false}
+{"id": "rl-021", "agent_id": 1, "query": "他的画为什么只用淡墨？有什么讲究？", "expect_refs": ["qingxi_town:08"], "difficulty": "medium", "tags": ["指代"], "synthetic": false}
+{"id": "rl-022", "agent_id": 1, "query": "它的制作工序里最怕遇上什么天气？", "expect_refs": ["qingxi_town:07"], "difficulty": "hard", "tags": ["指代"], "synthetic": false}
+{"id": "rl-023", "agent_id": 1, "query": "他是当年修堤的发起人吗？碑文上还刻了谁的名字？", "expect_refs": ["qingxi_town:10"], "difficulty": "hard", "tags": ["指代"], "synthetic": false}
+{"id": "rl-024", "agent_id": 1, "query": "那位山长收不收蒙童？他挑学生只看哪两样？", "expect_refs": ["qingxi_town:05"], "difficulty": "medium", "tags": ["指代"], "synthetic": false}
+{"id": "rl-025", "agent_id": 1, "query": "云栖茶庄创始人的孙女是谁？她有什么过人之处？", "expect_refs": ["yunqi_tea:01", "yunqi_tea:04"], "difficulty": "hard", "tags": ["多跳"], "synthetic": false}
+{"id": "rl-026", "agent_id": 1, "query": "云栖茶庄的创始人叫什么？他的师父临终送了他什么东西？", "expect_refs": ["yunqi_tea:01", "yunqi_tea:03"], "difficulty": "medium", "tags": ["多跳"], "synthetic": false}
+{"id": "rl-027", "agent_id": 1, "query": "茶庄做桂花糕用的腌桂花来自谁家？那家以什么起家？", "expect_refs": ["yunqi_tea:06", "qingxi_town:02"], "difficulty": "hard", "tags": ["多跳"], "synthetic": false}
+{"id": "rl-028", "agent_id": 1, "query": "说书人周先生逢什么日子来茶庄？镇上的集市又逢几开？", "expect_refs": ["yunqi_tea:07", "qingxi_town:03"], "difficulty": "hard", "tags": ["多跳", "数字"], "synthetic": false}
+{"id": "rl-029", "agent_id": 1, "query": "吴鹤舟的《青溪长卷》如今藏在哪里？那是个什么地方？", "expect_refs": ["qingxi_town:08", "qingxi_town:05"], "difficulty": "hard", "tags": ["多跳"], "synthetic": false}
+{"id": "rl-030", "agent_id": 1, "query": "二十年前那场大水淹了谁家的一间糖窖？那家如今的当家人是谁？", "expect_refs": ["qingxi_town:10", "qingxi_town:02"], "difficulty": "hard", "tags": ["多跳"], "synthetic": false}
+{"id": "rl-031", "agent_id": 1, "query": "每年清明上后山祭树的人是谁？她怎么看山神啜茶的传说？", "expect_refs": ["yunqi_tea:04", "yunqi_tea:08"], "difficulty": "medium", "tags": ["多跳"], "synthetic": false}
+{"id": "rl-032", "agent_id": 1, "query": "云栖别院交给谁打理？他和云栖茶庄的创始人是什么关系？", "expect_refs": ["yunqi_tea:10", "yunqi_tea:01"], "difficulty": "medium", "tags": ["多跳"], "synthetic": false}
+{"id": "rl-033", "agent_id": 1, "query": "镇上人把陆明澜唤作什么？", "expect_refs": ["yunqi_tea:04"], "difficulty": "easy", "tags": ["别名"], "synthetic": false}
+{"id": "rl-034", "agent_id": 1, "query": "「云栖别院」是云栖茶庄的什么？", "expect_refs": ["yunqi_tea:10"], "difficulty": "easy", "tags": ["别名"], "synthetic": false}
+{"id": "rl-035", "agent_id": 1, "query": "「何掌柜」在茶庄管什么？", "expect_refs": ["yunqi_tea:05"], "difficulty": "easy", "tags": ["别名"], "synthetic": false}
+{"id": "rl-036", "agent_id": 1, "query": "「听雨」是什么东西的名字？", "expect_refs": ["yunqi_tea:03"], "difficulty": "medium", "tags": ["别名"], "synthetic": false}
+{"id": "rl-037", "agent_id": 1, "query": "「步月桥」和青溪河是什么关系？", "expect_refs": ["qingxi_town:04"], "difficulty": "easy", "tags": ["别名"], "synthetic": false}
+{"id": "rl-038", "agent_id": 1, "query": "「青溪藕粉」是哪个镇的特产？", "expect_refs": ["qingxi_town:07"], "difficulty": "easy", "tags": ["别名"], "synthetic": false}
+{"id": "rl-039", "agent_id": 1, "query": "「青溪」这个地名是怎么来的？", "expect_refs": ["qingxi_town:01"], "difficulty": "medium", "tags": ["别名"], "synthetic": false}
+{"id": "rl-040", "agent_id": 1, "query": "「明德书院」在镇上的什么位置？出过几位举人？", "expect_refs": ["qingxi_town:05"], "difficulty": "medium", "tags": ["别名", "数字"], "synthetic": false}

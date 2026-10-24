@@ -1,0 +1,138 @@
+{
+  "schema_version": "1.1",
+  "generated_at": "2026-10-21T19:19:00",
+  "git_sha": "fc3f88b",
+  "suite_version": "v2.0.0",
+  "split": "all",
+  "storage": "postgres:roleplay_test",
+  "llm_enabled": true,
+  "judge": {
+    "model": "deepseek-chat",
+    "rubric_version": "r2",
+    "temperature": 0
+  },
+  "metrics": {
+    "golden": {
+      "isolation_leaks": 0,
+      "memory_hit_rate": 1.0,
+      "forbid_violations": 0
+    },
+    "scenario": {
+      "persona_pass": 0.9875,
+      "boundary_pass": 0.9875
+    },
+    "adversarial": {
+      "refusal_rate": 1.0,
+      "persona_intact_rate": 1.0,
+      "expect_consumed": true,
+      "source_counts": {
+        "refusal": {
+          "expect": 40,
+          "judge_fallback": 0
+        },
+        "persona_intact": {
+          "expect": 40,
+          "judge_fallback": 0
+        }
+      }
+    },
+    "retrieval": {
+      "hit@1": 0.95,
+      "hit@3": 1.0,
+      "mrr": 0.975,
+      "ndcg@10": 0.9744904758630006
+    },
+    "retrieval_lore": {
+      "hit@1": 0.975,
+      "hit@3": 1.0,
+      "mrr": 0.9875,
+      "ndcg@10": 0.9768907893980134,
+      "queries": 40,
+      "rerank": true,
+      "skipped": false,
+      "skip_reason": null
+    },
+    "system": {
+      "p50_first_token_ms": null,
+      "p95_first_token_ms": null,
+      "tokens_per_turn": null,
+      "cost_cny_per_turn": null
+    }
+  },
+  "baseline": {
+    "path": "eval/baseline/v2.2.json",
+    "delta": {
+      "golden": {
+        "isolation_leaks": 0,
+        "memory_hit_rate": 0.0,
+        "forbid_violations": 0
+      },
+      "scenario": {
+        "persona_pass": -0.0125,
+        "boundary_pass": -0.0125
+      },
+      "adversarial": {
+        "refusal_rate": 0.025,
+        "persona_intact_rate": 0.025,
+        "expect_consumed": null,
+        "source_counts": null
+      },
+      "retrieval": {
+        "hit@1": 0.0,
+        "hit@3": 0.0,
+        "mrr": 0.0,
+        "ndcg@10": 0.0
+      },
+      "retrieval_lore": {
+        "hit@1": 0.0,
+        "hit@3": 0.0,
+        "mrr": 0.0,
+        "ndcg@10": 0.0,
+        "queries": 0,
+        "rerank": null,
+        "skipped": null,
+        "skip_reason": null
+      },
+      "system": {
+        "p50_first_token_ms": null,
+        "p95_first_token_ms": null,
+        "tokens_per_turn": null,
+        "cost_cny_per_turn": null
+      }
+    }
+  },
+  "failures": [
+    {
+      "suite": "scenario",
+      "id": "sc-020",
+      "reason": "[judge 判 fail] 语气有说书人的爽利劲儿，但把现代奥运跳水金牌说成亲历见闻，严重越出民国说书人的时代边界，属编造设定。"
+    },
+    {
+      "suite": "retrieval",
+      "id": "ret-001",
+      "reason": "top-1 未命中（top-3 命中）"
+    },
+    {
+      "suite": "retrieval",
+      "id": "ret-006",
+      "reason": "top-1 未命中（top-3 命中）"
+    },
+    {
+      "suite": "retrieval",
+      "id": "ret-015",
+      "reason": "top-1 未命中（top-3 命中）"
+    },
+    {
+      "suite": "retrieval_lore",
+      "id": "rl-016",
+      "reason": "top-1 未命中（top-3 命中）"
+    }
+  ],
+  "usage": {
+    "llm_calls": 287,
+    "prompt_tokens": 187206,
+    "completion_tokens": 16458,
+    "judge_cache_hits": 0,
+    "judge_cache_misses": 120
+  }
+}

@@ -18,9 +18,23 @@ from psycopg_pool import AsyncConnectionPool
 
 from app.config import get_settings
 from app.db.base import create_engine, create_session_factory
+from app.observability.trace import configure_trace_store
 
 if sys.platform == "win32":  # 兜底：非 pytest-asyncio 路径也走 Selector 策略
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
+@pytest.fixture(autouse=True)
+def _isolate_trace_store():
+    """R2：单测绝不写默认 `data/traces`。
+
+    `trace._get_store()` 在未注入时会按 settings **惰性构造**默认目录的 TraceStore；
+    单测一旦走真实的 trace 生命周期（chat/group 用例）就会把测试记录混进当日报告。
+    这里显式注入 None（等价于关闭写入），需要真实 store 的用例自己在用例内注入临时目录。
+    """
+    configure_trace_store(None)
+    yield
+    configure_trace_store(None)
 
 
 def pytest_asyncio_loop_factories(config, item):

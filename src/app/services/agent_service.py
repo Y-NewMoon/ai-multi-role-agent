@@ -49,6 +49,7 @@ class AgentService:
                 persona_prompt=data.persona_prompt,
                 background=data.background,
                 avatar=data.avatar,
+                allowed_skills=list(data.allowed_skills or []),
             )
             db.add(agent)
             await db.commit()

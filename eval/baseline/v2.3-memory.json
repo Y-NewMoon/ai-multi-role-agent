@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "suite": "memory",
+  "generated_at": "2026-10-21T21:00:13",
+  "git_sha": "b53ed93",
+  "agent": 1,
+  "metrics": {
+    "conflict_accuracy": 1.0,
+    "profile_hit_rate": 1.0,
+    "recall_hit@5": 1.0,
+    "recall_hit@5_plain": 1.0,
+    "weighted_delta": 0.0,
+    "fact_injection_hit@5": 1.0,
+    "fact_injection_hit@5_plain": 1.0,
+    "recall_denominator": {
+      "memory": 15,
+      "fact": 5
+    },
+    "keep_both_delta": 12,
+    "skipped": false,
+    "skip_reason": null,
+    "cases": 40
+  },
+  "latency_probe": {
+    "skipped": false,
+    "skip_reason": null,
+    "samples_ms": [
+      1449.8,
+      1300.6,
+      903.9
+    ],
+    "p95_ms": 1449.8,
+    "threshold_ms": 2000,
+    "passed": true
+  },
+  "usage": {
+    "llm_calls": 3,
+    "prompt_tokens": 960,
+    "completion_tokens": 163,
+    "judge_cache_hits": 0,
+    "judge_cache_misses": 0,
+    "estimator": "cjk1_other4"
+  }
+}

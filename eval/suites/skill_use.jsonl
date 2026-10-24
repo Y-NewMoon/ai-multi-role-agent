@@ -1,0 +1,30 @@
+{"id": "tool-001", "agent_id": 1, "query": "现在东京几点？", "expect": {"tool": "get_current_time", "args": {"timezone": "Asia/Tokyo"}}, "tags": ["time"], "difficulty": "easy", "synthetic": false}
+{"id": "tool-002", "agent_id": 1, "query": "帮我查一下纽约现在是什么时间。", "expect": {"tool": "get_current_time", "args": {"timezone": "America/New_York"}}, "tags": ["time"], "difficulty": "easy", "synthetic": false}
+{"id": "tool-003", "agent_id": 1, "query": "伦敦现在几点了？", "expect": {"tool": "get_current_time", "args": {"timezone": "Europe/London"}}, "tags": ["time"], "difficulty": "medium", "synthetic": false}
+{"id": "tool-004", "agent_id": 1, "query": "现在 UTC 时间是几点？", "expect": {"tool": "get_current_time", "args": {"timezone": "UTC"}}, "tags": ["time"], "difficulty": "medium", "synthetic": false}
+{"id": "tool-005", "agent_id": 1, "query": "今天几号了？", "expect": {"tool": "get_current_time", "args": {}}, "tags": ["time", "默认参数"], "difficulty": "easy", "synthetic": false}
+{"id": "tool-006", "agent_id": 1, "query": "帮我掷 1d20，看看今天的运气。", "expect": {"tool": "roll_dice", "args": {"dice": "1d20"}}, "tags": ["dice"], "difficulty": "easy", "synthetic": false}
+{"id": "tool-007", "agent_id": 1, "query": "掷两次 1d6。", "expect": {"tool": "roll_dice", "args": {"dice": "1d6", "times": 2}}, "tags": ["dice"], "difficulty": "medium", "synthetic": false}
+{"id": "tool-008", "agent_id": 1, "query": "帮我掷 3d8。", "expect": {"tool": "roll_dice", "args": {"dice": "3d8"}}, "tags": ["dice"], "difficulty": "easy", "synthetic": false}
+{"id": "tool-009", "agent_id": 1, "query": "掷 2d6，掷三次看看。", "expect": {"tool": "roll_dice", "args": {"dice": "2d6", "times": 3}}, "tags": ["dice"], "difficulty": "hard", "synthetic": false}
+{"id": "tool-010", "agent_id": 1, "query": "掷一下 10d100。", "expect": {"tool": "roll_dice", "args": {"dice": "10d100"}}, "tags": ["dice"], "difficulty": "medium", "synthetic": false}
+{"id": "tool-011", "agent_id": 1, "query": "上网帮我查一下 bge-m3 是什么模型。", "expect": {"tool": "web_search", "args": {}}, "tags": ["search"], "difficulty": "easy", "synthetic": false}
+{"id": "tool-012", "agent_id": 1, "query": "搜一下今年诺贝尔文学奖颁给了谁。", "expect": {"tool": "web_search", "args": {}}, "tags": ["search"], "difficulty": "medium", "synthetic": false}
+{"id": "tool-013", "agent_id": 1, "query": "联网查查「AI Agent」最近有什么新闻。", "expect": {"tool": "web_search", "args": {}}, "tags": ["search"], "difficulty": "medium", "synthetic": false}
+{"id": "tool-014", "agent_id": 1, "query": "帮我搜一下上海到杭州的高铁要坐多久。", "expect": {"tool": "web_search", "args": {}}, "tags": ["search"], "difficulty": "easy", "synthetic": false}
+{"id": "tool-015", "agent_id": 1, "query": "上网找一下明天北京的天气怎么样。", "expect": {"tool": "web_search", "args": {}}, "tags": ["search"], "difficulty": "medium", "synthetic": false}
+{"id": "tool-016", "agent_id": 1, "query": "2026-10-25 09:00 提醒我参加线上会议。", "expect": {"tool": "set_reminder", "args": {}}, "tags": ["reminder"], "difficulty": "easy", "synthetic": false}
+{"id": "tool-017", "agent_id": 1, "query": "帮我设个提醒：2026-10-30 08:30 交房租。", "expect": {"tool": "set_reminder", "args": {}}, "tags": ["reminder"], "difficulty": "medium", "synthetic": false}
+{"id": "tool-018", "agent_id": 1, "query": "提醒我 2026-11-01 20:00 给鱼缸换水。", "expect": {"tool": "set_reminder", "args": {}}, "tags": ["reminder"], "difficulty": "medium", "synthetic": false}
+{"id": "tool-019", "agent_id": 1, "query": "在 2026-12-24 18:00 提醒我买圣诞礼物。", "expect": {"tool": "set_reminder", "args": {}}, "tags": ["reminder"], "difficulty": "medium", "synthetic": false}
+{"id": "tool-020", "agent_id": 1, "query": "2026-11-15 07:00 提醒我别忘了带伞。", "expect": {"tool": "set_reminder", "args": {}}, "tags": ["reminder"], "difficulty": "hard", "synthetic": false}
+{"id": "tool-021", "agent_id": 1, "query": "咱们茶庄的招牌茶叫什么名字？", "expect": {"tool": "read_lore", "args": {}}, "tags": ["lore"], "difficulty": "easy", "synthetic": false}
+{"id": "tool-022", "agent_id": 1, "query": "店里那柄紫砂壶有什么来历？", "expect": {"tool": "read_lore", "args": {}}, "tags": ["lore"], "difficulty": "medium", "synthetic": false}
+{"id": "tool-023", "agent_id": 1, "query": "茶庄的茶点有哪几样？", "expect": {"tool": "read_lore", "args": {}}, "tags": ["lore"], "difficulty": "easy", "synthetic": false}
+{"id": "tool-024", "agent_id": 1, "query": "青溪镇那座老桥叫什么名字？", "expect": {"tool": "read_lore", "args": {}}, "tags": ["lore"], "difficulty": "medium", "synthetic": false}
+{"id": "tool-025", "agent_id": 1, "query": "跑堂的阿福是什么来历？", "expect": {"tool": "read_lore", "args": {}}, "tags": ["lore"], "difficulty": "medium", "synthetic": false}
+{"id": "tool-026", "agent_id": 1, "query": "今天心情不错，陪我聊会儿吧。", "expect": {"no_tool": true}, "tags": ["no_tool"], "difficulty": "easy", "synthetic": false}
+{"id": "tool-027", "agent_id": 1, "query": "你觉得茶是趁热喝好，还是凉一点再喝好？", "expect": {"no_tool": true}, "tags": ["no_tool"], "difficulty": "easy", "synthetic": false}
+{"id": "tool-028", "agent_id": 1, "query": "我最近有点累。", "expect": {"no_tool": true}, "tags": ["no_tool"], "difficulty": "easy", "synthetic": false}
+{"id": "tool-029", "agent_id": 1, "query": "你在忙吗？", "expect": {"no_tool": true}, "tags": ["no_tool"], "difficulty": "easy", "synthetic": false}
+{"id": "tool-030", "agent_id": 1, "query": "咱们随便聊聊吧，今天想说点轻松的。", "expect": {"no_tool": true}, "tags": ["no_tool"], "difficulty": "easy", "synthetic": false}

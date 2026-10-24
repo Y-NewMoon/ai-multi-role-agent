@@ -1,0 +1,60 @@
+{"id": "ret-001", "agent_id": 1, "corpus": "tea_house", "query": "一盏春的少掌柜是沈家哪一辈的孙女？她记性好在哪儿？", "expect_chunk_ids": ["tea_house:01"], "difficulty": "medium", "tags": ["指代", "地点"], "top_k": 10}
+{"id": "ret-002", "agent_id": 1, "corpus": "tea_house", "query": "掌柜沈敬亭为什么被叫沈七分？他倒茶的规矩是什么？", "expect_chunk_ids": ["tea_house:02"], "difficulty": "easy", "tags": ["指代", "因果"], "top_k": 10}
+{"id": "ret-003", "agent_id": 1, "corpus": "tea_house", "query": "说书人老周每天什么时辰在茶馆开场？他说一场书收多少钱？", "expect_chunk_ids": ["tea_house:03"], "difficulty": "easy", "tags": ["指代", "数字"], "top_k": 10}
+{"id": "ret-004", "agent_id": 1, "corpus": "tea_house", "query": "炒茶师傅青姑炒茶用什么古法？她收徒第一课教什么？", "expect_chunk_ids": ["tea_house:04", "tea_house:20"], "difficulty": "easy", "tags": ["指代"], "top_k": 10}
+{"id": "ret-005", "agent_id": 1, "corpus": "tea_house", "query": "茶馆的账房白秀才用什么法子记账？他右手有什么与众不同？", "expect_chunk_ids": ["tea_house:05"], "difficulty": "easy", "tags": ["指代"], "top_k": 10}
+{"id": "ret-006", "agent_id": 1, "corpus": "tea_house", "query": "从雾脊山替茶馆运茶青的船工是谁？他水性有多好？", "expect_chunk_ids": ["tea_house:06"], "difficulty": "medium", "tags": ["指代", "人物"], "top_k": 10}
+{"id": "ret-007", "agent_id": 1, "corpus": "tea_house", "query": "一盏春的铺面是谁盘下的？开张头一天卖了几碗茶？", "expect_chunk_ids": ["tea_house:07"], "difficulty": "easy", "tags": ["人物"], "top_k": 10}
+{"id": "ret-008", "agent_id": 1, "corpus": "tea_house", "query": "老掌柜沈万盅尝茶有多厉害？这手本事传给了谁？", "expect_chunk_ids": ["tea_house:08"], "difficulty": "easy", "tags": ["人物"], "top_k": 10}
+{"id": "ret-009", "agent_id": 1, "corpus": "tea_house", "query": "一盏春的招牌茶是哪三款？哪款一年只出二十斤？", "expect_chunk_ids": ["tea_house:09"], "difficulty": "easy", "tags": ["事实"], "top_k": 10}
+{"id": "ret-010", "agent_id": 1, "corpus": "tea_house", "query": "镇店的紫砂壶云吞平时锁在哪儿？它出过什么失窃的案子？", "expect_chunk_ids": ["tea_house:10", "tea_house:15"], "difficulty": "easy", "tags": ["指代", "地点"], "top_k": 10}
+{"id": "ret-011", "agent_id": 1, "corpus": "tea_house", "query": "灶上那把铜茶铫錾着谁的名字？是什么时候打的？", "expect_chunk_ids": ["tea_house:11"], "difficulty": "easy", "tags": ["人物", "时间"], "top_k": 10}
+{"id": "ret-012", "agent_id": 1, "corpus": "tea_house", "query": "后院的老桂花树有多少年头？它的花瓣都做成了什么吃食？", "expect_chunk_ids": ["tea_house:12", "tea_house:17"], "difficulty": "easy", "tags": ["指代", "数字"], "top_k": 10}
+{"id": "ret-013", "agent_id": 1, "corpus": "tea_house", "query": "去年谷雨斗茶会的茶魁是谁夺的？他守着哪儿的老茶树？", "expect_chunk_ids": ["tea_house:13", "tea_house:18"], "difficulty": "easy", "tags": ["指代", "人物", "地点"], "top_k": 10}
+{"id": "ret-014", "agent_id": 1, "corpus": "tea_house", "query": "老客赊账领的竹牌上刻着什么字？这规矩立了多少年？", "expect_chunk_ids": ["tea_house:14"], "difficulty": "easy", "tags": ["数字"], "top_k": 10}
+{"id": "ret-015", "agent_id": 1, "corpus": "tea_house", "query": "去年灯会茶馆丢了什么宝贝？最后是在哪儿找到的？", "expect_chunk_ids": ["tea_house:15"], "difficulty": "medium", "tags": ["地点"], "top_k": 10}
+{"id": "ret-016", "agent_id": 1, "corpus": "tea_house", "query": "一盏春的门匾是哪位老先生写的？他题匾要了什么报酬？", "expect_chunk_ids": ["tea_house:16"], "difficulty": "easy", "tags": ["指代", "人物"], "top_k": 10}
+{"id": "ret-017", "agent_id": 1, "corpus": "tea_house", "query": "茶馆的茶点是哪四样？可以单卖吗？", "expect_chunk_ids": ["tea_house:17"], "difficulty": "easy", "tags": ["事实"], "top_k": 10}
+{"id": "ret-018", "agent_id": 1, "corpus": "tea_house", "query": "茶馆的茶青来自镇西哪座山？那里的茶为什么带兰香？", "expect_chunk_ids": ["tea_house:18"], "difficulty": "easy", "tags": ["因果"], "top_k": 10}
+{"id": "ret-019", "agent_id": 1, "corpus": "tea_house", "query": "老周的看家书目青溪案说的是什么旧案？", "expect_chunk_ids": ["tea_house:19"], "difficulty": "easy", "tags": ["事实"], "top_k": 10}
+{"id": "ret-020", "agent_id": 1, "corpus": "tea_house", "query": "青姑说的三沸诀是哪三沸？靠什么来辨水温？", "expect_chunk_ids": ["tea_house:20"], "difficulty": "easy", "tags": ["事实"], "top_k": 10}
+{"id": "ret-021", "agent_id": 1, "corpus": "campus", "query": "南岭大学是哪年创办的、校训是什么？百年校庆又是哪天？", "expect_chunk_ids": ["campus:01", "campus:14"], "difficulty": "easy", "tags": ["时间"], "top_k": 10}
+{"id": "ret-022", "agent_id": 1, "corpus": "campus", "query": "去墨池图书馆自习要怎么预约？考研季占座有什么新规？", "expect_chunk_ids": ["campus:02", "campus:12"], "difficulty": "easy", "tags": ["因果"], "top_k": 10}
+{"id": "ret-023", "agent_id": 1, "corpus": "campus", "query": "三食堂麻辣香锅窗口的打菜阿姨有什么本事？学生私下称她什么？", "expect_chunk_ids": ["campus:03"], "difficulty": "easy", "tags": ["指代"], "top_k": 10}
+{"id": "ret-024", "agent_id": 1, "corpus": "campus", "query": "想找辅导员秋姐谈话得赶什么时候？她记性有多好？", "expect_chunk_ids": ["campus:04"], "difficulty": "easy", "tags": ["指代", "时间"], "top_k": 10}
+{"id": "ret-025", "agent_id": 1, "corpus": "campus", "query": "梅园三栋的宿管杨一杆有什么来历？熄灯后好说话吗？", "expect_chunk_ids": ["campus:05"], "difficulty": "easy", "tags": ["事实"], "top_k": 10}
+{"id": "ret-026", "agent_id": 1, "corpus": "campus", "query": "校辩论队的金言杯是什么来头？平时锁在哪里？", "expect_chunk_ids": ["campus:06"], "difficulty": "easy", "tags": ["地点"], "top_k": 10}
+{"id": "ret-027", "agent_id": 1, "corpus": "campus", "query": "星轨天文社观测英仙座流星雨有什么规矩？望远镜外号叫什么？", "expect_chunk_ids": ["campus:07"], "difficulty": "easy", "tags": ["事实"], "top_k": 10}
+{"id": "ret-028", "agent_id": 1, "corpus": "campus", "query": "数学系门口的高数红榜是干什么的？校园里那只叫高数的猫又是怎么回事？", "expect_chunk_ids": ["campus:08", "campus:11"], "difficulty": "easy", "tags": ["因果"], "top_k": 10}
+{"id": "ret-029", "agent_id": 1, "corpus": "campus", "query": "迎新晚会的压轴合唱是哪首歌？词是哪位学姐写的？", "expect_chunk_ids": ["campus:09"], "difficulty": "easy", "tags": ["人物"], "top_k": 10}
+{"id": "ret-030", "agent_id": 1, "corpus": "campus", "query": "校园卡为什么叫小蓝？丢了去哪儿补办、要多少钱？", "expect_chunk_ids": ["campus:10"], "difficulty": "easy", "tags": ["地点", "因果", "数字"], "top_k": 10}
+{"id": "ret-031", "agent_id": 1, "corpus": "campus", "query": "被学生封为蹭课猫的大橘猫有什么来历？天冷了它去哪儿趴着？", "expect_chunk_ids": ["campus:11"], "difficulty": "easy", "tags": ["指代", "地点"], "top_k": 10}
+{"id": "ret-032", "agent_id": 1, "corpus": "campus", "query": "图书馆人走物留超过多久会被收走东西？这新规是怎么来的？", "expect_chunk_ids": ["campus:12"], "difficulty": "easy", "tags": ["时间", "因果"], "top_k": 10}
+{"id": "ret-033", "agent_id": 1, "corpus": "campus", "query": "最高档的南岭星奖学金一个院评几个人？奖金相当于什么？", "expect_chunk_ids": ["campus:13"], "difficulty": "easy", "tags": ["数字"], "top_k": 10}
+{"id": "ret-034", "agent_id": 1, "corpus": "campus", "query": "百年校庆的主会场设在哪里？晚会有什么看头？", "expect_chunk_ids": ["campus:14"], "difficulty": "easy", "tags": ["地点"], "top_k": 10}
+{"id": "ret-035", "agent_id": 1, "corpus": "campus", "query": "校医室的苏一针打针有什么本事？她治什么最拿手？", "expect_chunk_ids": ["campus:15"], "difficulty": "easy", "tags": ["指代"], "top_k": 10}
+{"id": "ret-036", "agent_id": 1, "corpus": "campus", "query": "骑行社的镇社之宝铁驴是辆什么车？环校路线怎么走？", "expect_chunk_ids": ["campus:16"], "difficulty": "easy", "tags": ["因果"], "top_k": 10}
+{"id": "ret-037", "agent_id": 1, "corpus": "campus", "query": "西门的顺风耳驿站能代取快递吗？几点前送到楼下？", "expect_chunk_ids": ["campus:17"], "difficulty": "easy", "tags": ["时间"], "top_k": 10}
+{"id": "ret-038", "agent_id": 1, "corpus": "campus", "query": "生科院研究苔藓的教授是谁？他办公室养了多少种苔藓？", "expect_chunk_ids": ["campus:18"], "difficulty": "easy", "tags": ["指代", "人物", "数字"], "top_k": 10}
+{"id": "ret-039", "agent_id": 1, "corpus": "campus", "query": "期末周墨池馆哪间教室通宵开放？屋里备着什么？", "expect_chunk_ids": ["campus:19"], "difficulty": "easy", "tags": ["事实"], "top_k": 10}
+{"id": "ret-040", "agent_id": 1, "corpus": "campus", "query": "图书馆出口的上岸墙是干什么的？考中了要回去贴什么？", "expect_chunk_ids": ["campus:20"], "difficulty": "easy", "tags": ["事实"], "top_k": 10}
+{"id": "ret-041", "agent_id": 1, "corpus": "jianghu", "query": "听雨楼立的三条规矩是什么？楼主用什么兵器？", "expect_chunk_ids": ["jianghu:01"], "difficulty": "easy", "tags": ["事实"], "top_k": 10}
+{"id": "ret-042", "agent_id": 1, "corpus": "jianghu", "query": "顾长风为什么人称顾一剑？他背的照霜剑有什么名堂？", "expect_chunk_ids": ["jianghu:02", "jianghu:05"], "difficulty": "easy", "tags": ["指代", "人物", "因果"], "top_k": 10}
+{"id": "ret-043", "agent_id": 1, "corpus": "jianghu", "query": "想投奔断雁山庄避难要先做什么？庄主立的庄规是什么？", "expect_chunk_ids": ["jianghu:03"], "difficulty": "easy", "tags": ["事实"], "top_k": 10}
+{"id": "ret-044", "agent_id": 1, "corpus": "jianghu", "query": "药王谷谷主葛青囊救人的规矩有多古怪？恶人他也救吗？", "expect_chunk_ids": ["jianghu:04"], "difficulty": "easy", "tags": ["指代"], "top_k": 10}
+{"id": "ret-045", "agent_id": 1, "corpus": "jianghu", "query": "名剑照霜出鞘时有什么异响？江湖传闻它有什么脾气？", "expect_chunk_ids": ["jianghu:05"], "difficulty": "easy", "tags": ["指代"], "top_k": 10}
+{"id": "ret-046", "agent_id": 1, "corpus": "jianghu", "query": "柳问刀的断月刀背上为什么缺了个口？和落雁峡那场大战有什么关系？", "expect_chunk_ids": ["jianghu:06", "jianghu:07"], "difficulty": "easy", "tags": ["指代", "因果"], "top_k": 10}
+{"id": "ret-047", "agent_id": 1, "corpus": "jianghu", "query": "二十年前正道和焚影教在落雁峡血战，结果如何？谁力战而死？", "expect_chunk_ids": ["jianghu:07"], "difficulty": "easy", "tags": ["人物", "因果"], "top_k": 10}
+{"id": "ret-048", "agent_id": 1, "corpus": "jianghu", "query": "泰山之巅的试剑台大会几年一会？夺魁能得什么？", "expect_chunk_ids": ["jianghu:08"], "difficulty": "easy", "tags": ["数字"], "top_k": 10}
+{"id": "ret-049", "agent_id": 1, "corpus": "jianghu", "query": "盗圣时来去偷不义之财有什么规矩？偷完留什么记号？", "expect_chunk_ids": ["jianghu:09"], "difficulty": "easy", "tags": ["事实"], "top_k": 10}
+{"id": "ret-050", "agent_id": 1, "corpus": "jianghu", "query": "顾长风与燕归寒结义的信物是什么？如今那半枚在谁手里？", "expect_chunk_ids": ["jianghu:10", "jianghu:20"], "difficulty": "easy", "tags": ["人物"], "top_k": 10}
+{"id": "ret-051", "agent_id": 1, "corpus": "jianghu", "query": "听雨楼的剑谱藏在什么机关里？最后一路残招叫什么？", "expect_chunk_ids": ["jianghu:11"], "difficulty": "easy", "tags": ["事实"], "top_k": 10}
+{"id": "ret-052", "agent_id": 1, "corpus": "jianghu", "query": "断雁山庄的大小姐柳叶有什么本事？她的医术师承何人？", "expect_chunk_ids": ["jianghu:12"], "difficulty": "easy", "tags": ["指代", "人物"], "top_k": 10}
+{"id": "ret-053", "agent_id": 1, "corpus": "jianghu", "query": "二十年前的魔教焚影教有什么镇教功法？练深了有什么痕迹？", "expect_chunk_ids": ["jianghu:13"], "difficulty": "easy", "tags": ["事实"], "top_k": 10}
+{"id": "ret-054", "agent_id": 1, "corpus": "jianghu", "query": "赤旗帮在河西道上只劫什么？和断雁山庄立过什么旧约？", "expect_chunk_ids": ["jianghu:14"], "difficulty": "easy", "tags": ["事实"], "top_k": 10}
+{"id": "ret-055", "agent_id": 1, "corpus": "jianghu", "query": "百晓生韦半卷的江湖风信录记的是什么？他轻功如何？", "expect_chunk_ids": ["jianghu:15"], "difficulty": "easy", "tags": ["指代", "因果"], "top_k": 10}
+{"id": "ret-056", "agent_id": 1, "corpus": "jianghu", "query": "顾长风和钟离雪在断桥立的旧约是什么？那坛女儿红埋在哪？", "expect_chunk_ids": ["jianghu:16"], "difficulty": "easy", "tags": ["事实"], "top_k": 10}
+{"id": "ret-057", "agent_id": 1, "corpus": "jianghu", "query": "柳问刀中的三日醉之毒是谁下的、谁解的？", "expect_chunk_ids": ["jianghu:17"], "difficulty": "easy", "tags": ["人物"], "top_k": 10}
+{"id": "ret-058", "agent_id": 1, "corpus": "jianghu", "query": "埋剑谷在昆仑哪里？守谷的老叟有什么特别？", "expect_chunk_ids": ["jianghu:18"], "difficulty": "easy", "tags": ["地点"], "top_k": 10}
+{"id": "ret-059", "agent_id": 1, "corpus": "jianghu", "query": "宽面居的老板裴三刀立了什么规矩？接得住他几招吃面不花钱？", "expect_chunk_ids": ["jianghu:19"], "difficulty": "easy", "tags": ["指代"], "top_k": 10}
+{"id": "ret-060", "agent_id": 1, "corpus": "jianghu", "query": "燕归寒的女儿燕小蝶剑穗上系着什么？她瞒着人练了什么功夫？", "expect_chunk_ids": ["jianghu:20"], "difficulty": "easy", "tags": ["指代"], "top_k": 10}

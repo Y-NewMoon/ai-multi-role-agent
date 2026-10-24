@@ -7,6 +7,7 @@ Windows 下 psycopg 异步不支持默认的 ProactorEventLoop，这里显式用
     uv run python scripts/run_server.py
 """
 
+import argparse
 import asyncio
 import sys
 from pathlib import Path
@@ -19,7 +20,12 @@ from uvicorn.server import Server  # noqa: E402
 
 
 def main() -> None:
-    config = Config("app.main:app", host="127.0.0.1", port=8000, log_level="info")
+    parser = argparse.ArgumentParser(description="开发/压测用启动脚本")
+    parser.add_argument("--host", default="127.0.0.1", help="监听地址（默认 127.0.0.1）")
+    parser.add_argument("--port", type=int, default=8000, help="监听端口（默认 8000）")
+    args = parser.parse_args()
+
+    config = Config("app.main:app", host=args.host, port=args.port, log_level="info")
     server = Server(config)
     asyncio.run(server.serve(), loop_factory=asyncio.SelectorEventLoop)
 

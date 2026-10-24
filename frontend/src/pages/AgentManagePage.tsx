@@ -9,6 +9,8 @@ import {
   uploadAvatar,
   type Agent,
 } from '../api/client'
+import SkillBadges from '../components/SkillBadges'
+import { SKILLS } from '../constants/skills'
 
 type Mode = 'edit' | 'create'
 
@@ -17,9 +19,16 @@ interface FormState {
   persona: string
   background: string
   avatar: string | null
+  allowed_skills: string[]
 }
 
-const EMPTY_FORM: FormState = { name: '', persona: '', background: '', avatar: null }
+const EMPTY_FORM: FormState = {
+  name: '',
+  persona: '',
+  background: '',
+  avatar: null,
+  allowed_skills: [],
+}
 
 function isImageAvatar(avatar: string | null): avatar is string {
   return avatar !== null && (avatar.startsWith('/') || avatar.startsWith('http'))
@@ -59,9 +68,19 @@ export default function AgentManagePage() {
       persona: agent.persona_prompt,
       background: agent.background ?? '',
       avatar: agent.avatar,
+      allowed_skills: [...agent.allowed_skills],
     })
     setError(null)
     setNotice(null)
+  }
+
+  function toggleTool(name: string) {
+    setForm((f) => ({
+      ...f,
+      allowed_skills: f.allowed_skills.includes(name)
+        ? f.allowed_skills.filter((x) => x !== name)
+        : [...f.allowed_skills, name],
+    }))
   }
 
   async function refresh() {
@@ -96,6 +115,7 @@ export default function AgentManagePage() {
       persona_prompt: form.persona,
       background: form.background.trim() === '' ? null : form.background,
       avatar: form.avatar,
+      allowed_skills: form.allowed_skills,
     }
     try {
       if (mode === 'create') {
@@ -186,7 +206,10 @@ export default function AgentManagePage() {
                   ) : (
                     <span className="agent-avatar">{agent.name.slice(0, 1)}</span>
                   )}
-                  <span className="agent-name">{agent.name}</span>
+                  <span className="agent-text">
+                    <span className="agent-name">{agent.name}</span>
+                    <SkillBadges skills={agent.allowed_skills} />
+                  </span>
                 </button>
               </li>
             ))}
@@ -272,6 +295,44 @@ export default function AgentManagePage() {
               disabled={busy}
               onChange={(e) => setForm((f) => ({ ...f, background: e.target.value }))}
             />
+          </div>
+
+          <div className="field">
+            <div className="tool-field-head">
+              <span className="field-label">可用工具</span>
+              <span className="tool-count">已选 {form.allowed_skills.length} / {SKILLS.length}</span>
+            </div>
+            <p className="field-hint">
+              不勾选任何工具时，角色只会纯文本回复；工具名由后端 registry 校验，未注册的名字会返回 422。
+            </p>
+            <div className="tool-grid">
+              {SKILLS.map((skill) => {
+                const checked = form.allowed_skills.includes(skill.name)
+                return (
+                  <label
+                    key={skill.name}
+                    className={checked ? 'tool-option checked' : 'tool-option'}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={busy}
+                      onChange={() => toggleTool(skill.name)}
+                    />
+                    <span className="tool-text">
+                      <span className="tool-name">
+                        {skill.label}
+                        <code className="tool-code">{skill.name}</code>
+                      </span>
+                      <span className="tool-desc">{skill.description}</span>
+                      {skill.note !== undefined && (
+                        <span className="tool-note">{skill.note}</span>
+                      )}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
           </div>
 
           {notice !== null && <div className="notice-bar">{notice}</div>}

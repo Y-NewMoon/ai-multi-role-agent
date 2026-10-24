@@ -57,3 +57,7 @@ jobs:
 
       - name: Run tests
         run: uv run pytest -q
+
+      # V2.0 评测门禁：golden 套件确定性检查（不调 LLM、不引 sentence-transformers）
+      - name: Run eval gate
+        run: uv run python eval/run_eval.py --suite golden --ci

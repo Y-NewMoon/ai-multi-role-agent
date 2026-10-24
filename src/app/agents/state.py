@@ -6,6 +6,8 @@
 
 from typing import Annotated, TypedDict
 
+import operator
+
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
 
@@ -25,6 +27,13 @@ class RolePlayState(TypedDict, total=False):
     system_prompt: str
     recalled_memories: list[str]
     summary: str  # 本会话滚动摘要（方案 3.10，由 retrieve_memory 取出）
+    # V2.3：记忆升级三段（默认空；extract 关闭时保持空 → prompt 与 V2.2 逐字一致）
+    recalled_facts: list[dict]
+    user_profile: dict[str, str]
+    l2_portrait: str
+    # V2.1：本轮注入的设定资料（世界书 chunk），元素
+    # {"source_ref","header_path","content","score","routes"}；由 retrieve_lore 填充。
+    recalled_lore: list[dict]
     prompt: list[dict]
     reply: str
     # M5：本轮角色连发的消息条（1~N 条，已去分隔符）；1 条 = 1 条 AIMessage = 1 行快照
@@ -38,3 +47,19 @@ class RolePlayState(TypedDict, total=False):
     idle_scope: str
     # 本轮生成的消息条数上限覆盖值；0/缺省 = 用图构造时的默认（reply_max_messages）。
     reply_max_messages: int
+
+    # —— V2.2 Skill 工具层 ——
+    # 本角色白名单（服务层从 Agent.allowed_skills 写入）；空 = 不绑工具。
+    allowed_skills: list[str]
+    # 已执行的工具轮数（每进一次 tools 节点 +1）。
+    tool_rounds: int
+    # 本轮模型请求的工具调用（generate 写入；tools 节点消费后清空）。
+    tool_calls: list[dict]
+    # 累计工具结果（结构化，operator.add 累加；供报告/测试断言）。
+    # 注意：checkpointer 会跨轮保留，故每条记录带 `tool_turn` 标记，本轮只认同一标记的记录。
+    tool_results: Annotated[list[dict], operator.add]
+    # 本轮工具作用域标记（服务层每次请求显式重置，用于隔离上一轮遗留的 tool_results）。
+    tool_turn: str
+
+    # —— V2.4：本轮 LLM 走超时/降级兜底（降级轮不写记忆，§2.9）——
+    degraded: bool

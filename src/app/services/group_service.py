@@ -10,18 +10,19 @@ SSE 时序（ADR-0003 延续到群聊）：`token` / `turn_done` 为角色级；
 
 from __future__ import annotations
 
-import asyncio
+import uuid
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agents.nodes.generate import normalize_thinkings
 from app.agents.supervisor import GroupMember, Supervisor
 from app.agents.thread_state import remove_thread_messages, thread_message_contents
 from app.core.errors import AppError, NotFoundError
+from app.core.locks import KeyedLockPool
 from app.db.models import Agent, GroupMessage
 from app.db.models import GroupMember as GroupMemberRow
 from app.db.models import GroupSession
@@ -52,6 +53,7 @@ class GroupService:
         max_turns: int = 4,
         idle_max_messages: int = 10,
         idle_turn_max_messages: int = 2,
+        tool_executor=None,
     ) -> None:
         self._session_factory = session_factory
         self._memory_store = memory_store
@@ -62,11 +64,10 @@ class GroupService:
         self._max_turns = max_turns
         self._idle_max_messages = idle_max_messages
         self._idle_turn_max_messages = idle_turn_max_messages
-        # 同群并发串行化（V1：单进程内存锁，与 ChatService 同性质，多实例无效——技术债）
-        self._locks: dict[int, asyncio.Lock] = {}
-
-    def _lock(self, group_session_id: int) -> asyncio.Lock:
-        return self._locks.setdefault(group_session_id, asyncio.Lock())
+        # V2.2：透传给 Supervisor，在每个角色每轮进图前清空工具缓存（§2.2-5）
+        self._tool_executor = tool_executor
+        # 同群并发串行化（V2.4 B-02：引用计数锁池，退出即释放；单进程语义，多实例需分布式锁）
+        self._locks = KeyedLockPool()
 
     # ===== 建群 / 查询 =====
 
@@ -223,6 +224,8 @@ class GroupService:
                     name=a.name,
                     persona_prompt=a.persona_prompt,
                     background=a.background or "",
+                    # V2.2：每个角色用自己的工具白名单（契约 §2.4：工具结果不跨角色共享）
+                    allowed_skills=tuple(a.allowed_skills or ()),
                 )
                 for a in rows
             ]
@@ -267,13 +270,22 @@ class GroupService:
         """把一条公屏内容写进每个成员的私有 namespace（标 visibility=group）。
 
         隔离墙在"读"上：每个成员的 namespace 只装自己的副本，不建公共 namespace。
+
+        他人发言落库时**带「【角色名】」前缀**（与工作记忆逐条注入的格式一致）：
+        ① 否则别人的台词与本角色自己的记忆无从区分，注入 `【你记得的相关信息】`
+        （compose_prompt）后模型会当成自己说过的话照抄；
+        ② 记忆 key 只由 (agent_id, content) 决定，不加前缀时"两人说了同一句话"
+        会命中同一个 key，把本人那条覆盖成他人的（实测已发生）。
+        用户发言（speaker 为空）不属他人发言，保持原文。
         """
+        name = next((m.name for m in context.members if m.agent_id == speaker_agent_id), None)
+        text = f"【{name}】{content}" if speaker_agent_id is not None and name else content
         for member in context.members:
             if member.agent_id in exclude:
                 continue
             await self._memory_store.put(
                 member.agent_id,
-                content,
+                text,
                 role=role,
                 visibility="group",
                 origin_group_session_id=context.group_session_id,
@@ -282,11 +294,32 @@ class GroupService:
 
     # ===== 一轮群聊 =====
 
+    async def _next_turn(self, group_session_id: int) -> int | None:
+        """该群用户消息序号（1-based，落本轮用户消息之前取数）；取不到为 None。"""
+        try:
+            async with self._session_factory() as db:
+                count = (
+                    await db.execute(
+                        select(func.count())
+                        .select_from(GroupMessage)
+                        .where(
+                            GroupMessage.group_session_id == group_session_id,
+                            GroupMessage.role == "user",
+                        )
+                    )
+                ).scalar_one()
+            return int(count) + 1
+        except Exception:  # noqa: BLE001 - trace 旁路失败不影响主流程
+            return None
+
     async def stream(
         self, *, context: GroupContext, message: str
     ) -> AsyncIterator[tuple[str, dict]]:
         group_session_id = context.group_session_id
-        async with self._lock(group_session_id):
+        async with self._locks.acquire(f"group:{group_session_id}"):
+            # V2.4：同一轮群聊共享 parent_trace_id（每个发言人一条 trace，不写汇总条）
+            parent_trace_id = uuid.uuid4().hex
+            turn = await self._next_turn(group_session_id)
             # 1) 用户消息：落快照 + 扇出给全部成员（ADR-0004 §3.2）
             user_msg_id = await self._append(
                 group_session_id, agent_id=None, role="user", content=message
@@ -299,11 +332,15 @@ class GroupService:
                 graph_factory=self._graph_factory,
                 members=context.members,
                 max_turns=self._max_turns,
+                tool_executor=self._tool_executor,
             )
             order: list[int] = []
             replies: list[dict] = []
             async for event, data in supervisor.run(
-                group_session_id=group_session_id, user_message=message
+                group_session_id=group_session_id,
+                user_message=message,
+                parent_trace_id=parent_trace_id,
+                turn=turn,
             ):
                 if event == "turn_done":
                     agent_id = int(data["agent_id"])
@@ -372,13 +409,16 @@ class GroupService:
         累计不超过 `idle_max_messages`；落库行标记 `is_idle=True`，`done.message_id=0`。
         """
         group_session_id = context.group_session_id
-        async with self._lock(group_session_id):
+        async with self._locks.acquire(f"group:{group_session_id}"):
             rotate_after = await self._last_speaker(group_session_id)
+            # V2.4：群聊自主闲聊同样按发言人各一条 trace（mode="group_idle"）
+            parent_trace_id = uuid.uuid4().hex
             supervisor = Supervisor(
                 llm=self._llm,
                 graph_factory=self._graph_factory,
                 members=context.members,
                 max_turns=self._max_turns,
+                tool_executor=self._tool_executor,
             )
             order: list[int] = []
             replies: list[dict] = []
@@ -387,6 +427,7 @@ class GroupService:
                 max_total=self._idle_max_messages,
                 turn_max_messages=self._idle_turn_max_messages,
                 rotate_after=rotate_after,
+                parent_trace_id=parent_trace_id,
             ):
                 if event == "turn_done":
                     agent_id = int(data["agent_id"])
@@ -437,7 +478,7 @@ class GroupService:
         返回被移除的快照消息 id 列表。
         """
         context = await self.load_context(group_session_id)
-        async with self._lock(group_session_id):
+        async with self._locks.acquire(f"group:{group_session_id}"):
             async with self._session_factory() as db:
                 rows = (
                     (
@@ -473,7 +514,8 @@ class GroupService:
             targets = contents_all | prefixed
             graphs = {aid: self._graph_factory() for aid in threads}
             for agent_id, thread_id in threads.items():
-                for content in contents_all:
+                # 他人发言在本成员 namespace 里带「【角色名】」前缀 → raw 与带前缀两种都删
+                for content in targets:
                     await self._memory_store.delete(agent_id, content)
                 await remove_thread_messages(graphs[agent_id], thread_id, targets)
             return removed
@@ -487,7 +529,7 @@ class GroupService:
         返回被移除的消息 id 列表（用户消息 + 本轮全部回复）。
         """
         context = await self.load_context(group_session_id)
-        async with self._lock(group_session_id):
+        async with self._locks.acquire(f"group:{group_session_id}"):
             async with self._session_factory() as db:
                 target = await db.get(GroupMessage, message_id)
                 if target is None or target.group_session_id != group_session_id:
@@ -545,7 +587,8 @@ class GroupService:
                     prefixed.add(f"【{name}】{r.content}")
             targets = contents_all | prefixed
             for agent_id, thread_id in threads.items():
-                for content in contents_all:
+                # 他人发言在本成员 namespace 里带「【角色名】」前缀 → raw 与带前缀两种都删
+                for content in targets:
                     await self._memory_store.delete(agent_id, content)
                 await remove_thread_messages(graphs[agent_id], thread_id, targets)
             return removed

@@ -14,9 +14,14 @@ htmlcov/
 # ---- 运行时数据 ----
 data/
 *.log
+# jieba 首次分词在仓库根写缓存（run_eval / pytest 触发），会让 manifest 的 git_dirty 变 true
+jieba.cache
 
 # ---- 评测报告输出 ----
 eval/report/
+
+# ---- 演示视频（体积较大，不上传）----
+/demo/
 
 # ---- 技术文档（不上传）----
 doc/
@@ -24,3 +29,6 @@ doc/
 # ---- IDE / 编辑器 ----
 .idea/
 .vscode/
+
+# ---- 本地草稿/临时目录（uv 缓存、诊断脚本，不入交付）----
+.tmp/

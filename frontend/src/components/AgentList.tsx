@@ -1,4 +1,5 @@
 import type { Agent } from '../api/client'
+import SkillBadges from './SkillBadges'
 
 interface Props {
   agents: Agent[]
@@ -32,7 +33,10 @@ export default function AgentList({ agents, activeId, disabled, onSelect }: Prop
             ) : (
               <span className="agent-avatar">{agent.name.slice(0, 1)}</span>
             )}
-            <span className="agent-name">{agent.name}</span>
+            <span className="agent-text">
+              <span className="agent-name">{agent.name}</span>
+              <SkillBadges skills={agent.allowed_skills} />
+            </span>
           </button>
         </li>
       ))}

@@ -44,6 +44,14 @@ class FakeLLM:
         yield self.reply
 
 
+class _ThinkRetryLLM(FakeLLM):
+    """首轮流式回复缺少内心独白；补写请求（非流式 generate）返回带独白的版本。"""
+
+    async def generate(self, messages: list[dict]) -> str:
+        self.calls.append(messages)
+        return f"{self.reply}{T}补写的心里话"
+
+
 class _CharLLM(FakeLLM):
     """逐字符产出：验证分隔符/思考标记被拆分在多个流式增量之间仍能正确解析。"""
 
@@ -220,6 +228,20 @@ async def test_graph_without_think_section_yields_empty_thinkings():
     result = await graph.ainvoke(_state("hi"), config={"configurable": {"thread_id": "22:22"}})
 
     assert result["thinkings"] == [""]  # 无 THINK 段 → 静默降级为空（前端不显示按钮）
+
+
+async def test_graph_retries_once_when_thinkings_missing():
+    """校验+补写：本轮完全没有内心独白时，带格式提醒重出一次并采纳补写结果。"""
+    llm = _ThinkRetryLLM("只有这一句")
+    store = _store()
+    graph = _graph(llm, store)
+
+    result = await graph.ainvoke(_state("hi"), config={"configurable": {"thread_id": "23:23"}})
+
+    assert result["replies"] == ["只有这一句"]
+    assert result["thinkings"] == ["补写的心里话"]
+    assert len(llm.calls) == 2  # 首轮流式 + 一次补写
+    assert T in llm.calls[-1][-1]["content"]  # 补写提示带格式说明
 
 
 async def test_graph_aligns_thinkings_count_to_replies():

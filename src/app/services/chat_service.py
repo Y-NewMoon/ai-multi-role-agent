@@ -7,12 +7,14 @@ SSE 流式下 `done` 事件必须在快照落库之后才推送。
 """
 
 import asyncio
+import time
 import uuid
+from collections import OrderedDict
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 from langchain_core.messages import HumanMessage
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agents.nodes.generate import normalize_thinkings
@@ -21,10 +23,18 @@ from app.agents.thread_state import (
     remove_thread_messages,
     thread_message_contents,
 )
+from app.config import get_settings
 from app.core.errors import AppError, NotFoundError
+from app.core.locks import KeyedLockPool
 from app.db.models import Agent, Message
 from app.db.models import Session as ChatSession
 from app.memory.store import MemoryStore
+from app.observability.trace import (
+    current_error,
+    is_degraded,
+    reset_trace,
+    start_trace,
+)
 from app.schemas.chat import ChatResponse
 
 
@@ -37,6 +47,8 @@ class ChatContext:
     agent_name: str
     persona_prompt: str
     background: str
+    # V2.2：本角色工具白名单（Agent.allowed_skills）；空 = 不绑工具（契约 §2.4）
+    allowed_skills: tuple[str, ...] = ()
 
     @property
     def thread_id(self) -> str:
@@ -64,20 +76,71 @@ class ChatService:
         graph,
         session_factory: async_sessionmaker[AsyncSession],
         memory_store: MemoryStore,
+        tool_executor=None,
+        idempotency_ttl_s: float | None = None,
+        idempotency_max_entries: int | None = None,
     ) -> None:
         self._graph = graph
         self._session_factory = session_factory
         self._memory_store = memory_store
+        # V2.2：每次图运行前清空工具缓存（同请求缓存，契约 §2.2-5）
+        self._tool_executor = tool_executor
         # 按 thread_id 串行化：同会话并发写 checkpointer 会造成分支覆盖（后写覆盖先写）。
-        # 单进程内存锁足以覆盖当前单实例部署；多实例部署需换成分布式锁（记入技术债）。
-        self._locks: dict[str, asyncio.Lock] = {}
+        # V2.4 B-02：引用计数锁池，退出即释放条目（单进程语义；多实例需分布式锁，记技术债）。
+        self._locks = KeyedLockPool()
+        # V2.4 D8：非流式 /chat 的进程内幂等缓存（单进程语义；重启/多实例失效，记 §7）
+        settings = get_settings()
+        ttl = idempotency_ttl_s if idempotency_ttl_s is not None else settings.chat_idempotency_ttl_s
+        limit = (
+            idempotency_max_entries
+            if idempotency_max_entries is not None
+            else settings.chat_idempotency_max_entries
+        )
+        self._idempotency_ttl_s = max(0.0, float(ttl))
+        self._idempotency_max_entries = max(1, int(limit))
+        self._idempotency: OrderedDict[tuple[int, str], tuple[float, ChatResponse]] = OrderedDict()
 
-    def _lock_for(self, thread_id: str) -> asyncio.Lock:
-        lock = self._locks.get(thread_id)
-        if lock is None:
-            lock = asyncio.Lock()
-            self._locks[thread_id] = lock
-        return lock
+    def _reset_tools(self) -> None:
+        if self._tool_executor is not None:
+            self._tool_executor.reset()
+
+    # ===== 非流式幂等（D8）=====
+
+    def _idempotent_lookup(
+        self, session_id: int, client_msg_id: str | None
+    ) -> ChatResponse | None:
+        """命中返回 `idempotent=true` 的副本；过期条目顺手剔除；空 key 不缓存。"""
+        if not client_msg_id:
+            return None
+        key = (session_id, client_msg_id)
+        item = self._idempotency.get(key)
+        if item is None:
+            return None
+        expires_at, response = item
+        if expires_at <= time.monotonic():
+            self._idempotency.pop(key, None)
+            return None
+        self._idempotency.move_to_end(key)
+        return response.model_copy(update={"idempotent": True})
+
+    def _idempotent_store(
+        self, session_id: int, client_msg_id: str | None, response: ChatResponse
+    ) -> None:
+        if not client_msg_id:
+            return
+        key = (session_id, client_msg_id)
+        now = time.monotonic()
+        self._idempotency[key] = (now + self._idempotency_ttl_s, response)
+        self._idempotency.move_to_end(key)
+        self._idempotent_evict(now)
+
+    def _idempotent_evict(self, now: float) -> None:
+        """清过期 + 超容量时按 LRU 淘汰（TTL 恒定，过期条目天然在队首）。"""
+        while self._idempotency:
+            key, (expires_at, _) = next(iter(self._idempotency.items()))
+            if expires_at > now and len(self._idempotency) <= self._idempotency_max_entries:
+                break
+            self._idempotency.popitem(last=False)
 
     async def load_context(self, *, session_id: int) -> ChatContext:
         """读业务库取会话与角色档案（仅服务层）。
@@ -98,6 +161,7 @@ class ChatService:
                 agent_name=agent.name,
                 persona_prompt=agent.persona_prompt,
                 background=agent.background or "",
+                allowed_skills=tuple(agent.allowed_skills or ()),
             )
 
     @staticmethod
@@ -119,6 +183,13 @@ class ChatService:
             "background": context.background,
             "idle_scope": "",
             "reply_max_messages": 0,
+            "allowed_skills": list(context.allowed_skills),
+            # 工具状态按「每轮请求」重新开始：tool_rounds/tool_calls 是普通字段、
+            # tool_results 是 operator.add 累积字段，二者都会被 checkpointer 跨轮保留。
+            # 不重置会让上一轮的轮数一直累加，最终 `forced=True` 导致该会话永久无法调工具。
+            "tool_rounds": 0,
+            "tool_calls": [],
+            "tool_turn": uuid.uuid4().hex,
         }
 
     @staticmethod
@@ -133,6 +204,11 @@ class ChatService:
             "background": context.background,
             "idle_scope": "private",
             "reply_max_messages": 0,  # 私聊闲聊用图默认上限（reply_max_messages=3）
+            "allowed_skills": list(context.allowed_skills),
+            # 同 `_state_in`：工具状态逐轮重置，避免闲聊轮继承上一轮的工具轮数
+            "tool_rounds": 0,
+            "tool_calls": [],
+            "tool_turn": uuid.uuid4().hex,
         }
 
     async def _write_snapshot(
@@ -185,27 +261,78 @@ class ChatService:
                 await db.refresh(row)
             return [row.id for row in rows]
 
-    async def chat(self, *, session_id: int, message: str) -> ChatResponse:
-        """非流式对话（M1 保留，便于 curl / 集成测试）。"""
+    async def _next_turn(self, session_id: int) -> int | None:
+        """该会话的用户消息序号（1-based）；取不到时为 None（不伪造）。"""
+        try:
+            async with self._session_factory() as db:
+                count = (
+                    await db.execute(
+                        select(func.count())
+                        .select_from(Message)
+                        .where(Message.session_id == session_id, Message.role == "user")
+                    )
+                ).scalar_one()
+            return int(count) + 1
+        except Exception:  # noqa: BLE001 - trace 旁路失败不影响主流程
+            return None
+
+    async def chat(
+        self, *, session_id: int, message: str, client_msg_id: str | None = None
+    ) -> ChatResponse:
+        """非流式对话（M1 保留，便于 curl / 集成测试）。
+
+        V2.4 D8：带 `client_msg_id` 时同 `(session_id, client_msg_id)` 在 TTL 内返回缓存，
+        不写 messages、不调图；命中结果 `idempotent=true`。空 key 行为与 V2.3 一致。
+        """
+        cached = self._idempotent_lookup(session_id, client_msg_id)
+        if cached is not None:
+            return cached
         context = await self.load_context(session_id=session_id)
-        async with self._lock_for(context.thread_id):
-            result = await self._graph.ainvoke(
-                self._state_in(context, message),
-                config={"configurable": {"thread_id": context.thread_id}},
+        # R6：turn 必须在会话锁内、上一轮快照落库之后计算，否则同会话并发的两轮
+        # 都会在写快照前取到相同序号（B-02 实际串行，第二轮应为 N+2）。
+        async with self._locks.acquire(context.thread_id):
+            # 进锁后二次检查：并发同 key 时只有第一个真正执行（防双写）
+            cached = self._idempotent_lookup(session_id, client_msg_id)
+            if cached is not None:
+                return cached
+            recorder, token = start_trace(
+                mode="private",
+                session_id=context.session_id,
+                agent_id=context.agent_id,
+                turn=await self._next_turn(context.session_id),
             )
-            replies = [str(r) for r in (result.get("replies") or [])] or [
-                str(result.get("reply", ""))
-            ]
-            thinkings = normalize_thinkings(
-                [str(t) for t in (result.get("thinkings") or [])], len(replies)
-            )
-            # 图执行完成（记忆已落 Store）后写展示用快照
-            await self._write_snapshot(context.session_id, message, replies, thinkings)
-        return ChatResponse(
-            session_id=context.session_id,
-            agent_id=context.agent_id,
-            reply="\n".join(replies),
-        )
+            try:
+                self._reset_tools()
+                result = await self._graph.ainvoke(
+                    self._state_in(context, message),
+                    config={"configurable": {"thread_id": context.thread_id}},
+                )
+                replies = [str(r) for r in (result.get("replies") or [])] or [
+                    str(result.get("reply", ""))
+                ]
+                thinkings = normalize_thinkings(
+                    [str(t) for t in (result.get("thinkings") or [])], len(replies)
+                )
+                # 图执行完成（记忆已落 Store）后写展示用快照
+                await self._write_snapshot(context.session_id, message, replies, thinkings)
+                response = ChatResponse(
+                    session_id=context.session_id,
+                    agent_id=context.agent_id,
+                    reply="\n".join(replies),
+                )
+                # 成功后才写缓存；异常/取消不缓存，重试可重新执行
+                self._idempotent_store(context.session_id, client_msg_id, response)
+                recorder.finish(error=current_error(), degraded=is_degraded())
+                return response
+            except BaseException as exc:
+                recorder.finish(
+                    error=current_error()
+                    or {"type": type(exc).__name__, "message": str(exc)},
+                    degraded=is_degraded(),
+                )
+                raise
+            finally:
+                reset_trace(token)
 
     async def stream(
         self, *, context: ChatContext, message: str
@@ -222,45 +349,71 @@ class ChatService:
         user_msg_id = 0
         reply_ids: list[int] = []
         input_message_id = str(uuid.uuid4())
-        async with self._lock_for(context.thread_id):
-            completed = False
+        # V2.4：每轮一条 trace；首个 token 事件记录 first_token_ms，done 前收敛写入（§2.3）
+        # R6：turn 在会话锁内计算（上一轮快照已落库），同会话并发才不会取到同一序号。
+        finished = False
+        async with self._locks.acquire(context.thread_id):
+            recorder, token = start_trace(
+                mode="private",
+                session_id=context.session_id,
+                agent_id=context.agent_id,
+                turn=await self._next_turn(context.session_id),
+            )
             try:
-                async for mode, chunk in self._graph.astream(
-                    self._state_in(context, message, message_id=input_message_id),
-                    config={"configurable": {"thread_id": context.thread_id}},
-                    stream_mode=["custom", "values"],
-                ):
-                    if mode == "custom":
-                        if isinstance(chunk, dict) and chunk.get("break"):
-                            yield ("message_break", {})
-                            continue
-                        text = str(chunk.get("text", "")) if isinstance(chunk, dict) else ""
-                        if text:
-                            yield ("token", {"text": text})
-                    elif mode == "values":
-                        # 每步状态快照；generate 完成后 chunk["replies"] 即本轮全部回复
-                        if chunk.get("replies"):
-                            replies = [str(r) for r in chunk["replies"]]
-                        if chunk.get("reply") is not None:
-                            reply_text = str(chunk["reply"])
-                        if chunk.get("thinkings") is not None:
-                            thinkings = [str(t) for t in chunk["thinkings"]]
+                completed = False
+                try:
+                    self._reset_tools()
+                    async for mode, chunk in self._graph.astream(
+                        self._state_in(context, message, message_id=input_message_id),
+                        config={"configurable": {"thread_id": context.thread_id}},
+                        stream_mode=["custom", "values"],
+                    ):
+                        if mode == "custom":
+                            if isinstance(chunk, dict) and chunk.get("break"):
+                                yield ("message_break", {})
+                                continue
+                            text = str(chunk.get("text", "")) if isinstance(chunk, dict) else ""
+                            if text:
+                                recorder.first_token()
+                                yield ("token", {"text": text})
+                        elif mode == "values":
+                            # 每步状态快照；generate 完成后 chunk["replies"] 即本轮全部回复
+                            if chunk.get("replies"):
+                                replies = [str(r) for r in chunk["replies"]]
+                            if chunk.get("reply") is not None:
+                                reply_text = str(chunk["reply"])
+                            if chunk.get("thinkings") is not None:
+                                thinkings = [str(t) for t in chunk["thinkings"]]
 
-                if not replies:
-                    replies = [reply_text]
-                thinkings = normalize_thinkings(thinkings, len(replies))
+                    if not replies:
+                        replies = [reply_text]
+                    thinkings = normalize_thinkings(thinkings, len(replies))
 
-                # 图已到 END：update_memory 节点已把记忆/摘要落 Store（3.7 第 3 步）
-                user_msg_id, reply_ids = await self._write_snapshot(
-                    context.session_id, message, replies, thinkings
-                )
-                completed = True
+                    # 图已到 END：update_memory 节点已把记忆/摘要落 Store（3.7 第 3 步）
+                    user_msg_id, reply_ids = await self._write_snapshot(
+                        context.session_id, message, replies, thinkings
+                    )
+                    completed = True
+                finally:
+                    if not completed:
+                        # 图在起步时就把本轮用户消息写进了工作记忆；若此处因异常/取消
+                        # 未走到快照落库，则该消息会成为「界面不可见却永久影响后续每轮」的
+                        # 孤儿消息 → 回滚删除它（尽力而为，不掩盖原始异常）。
+                        await self._discard_input(context.thread_id, input_message_id)
+
+                # 快照落库后收敛 trace（done 事件在锁外产出）
+                recorder.finish(error=current_error(), degraded=is_degraded())
+                finished = True
+            except BaseException as exc:
+                if not finished:
+                    recorder.finish(
+                        error=current_error()
+                        or {"type": type(exc).__name__, "message": str(exc)},
+                        degraded=is_degraded(),
+                    )
+                raise
             finally:
-                if not completed:
-                    # 图在起步时就把本轮用户消息写进了工作记忆；若此处因异常/取消
-                    # 未走到快照落库，则该消息会成为「界面不可见却永久影响后续每轮」的
-                    # 孤儿消息 → 回滚删除它（尽力而为，不掩盖原始异常）。
-                    await self._discard_input(context.thread_id, input_message_id)
+                reset_trace(token)
 
         # 快照落库后才产出 done（3.7 第 4 步）
         yield "done", {
@@ -299,44 +452,67 @@ class ChatService:
         thinkings: list[str] = []
         reply_text = ""
         reply_ids: list[int] = []
-        async with self._lock_for(context.thread_id):
-            async for mode, chunk in self._graph.astream(
-                self._idle_state_in(context),
-                config={"configurable": {"thread_id": context.thread_id}},
-                stream_mode=["custom", "values"],
-            ):
-                if mode == "custom":
-                    if isinstance(chunk, dict) and chunk.get("break"):
-                        yield ("message_break", {})
-                        continue
-                    text = str(chunk.get("text", "")) if isinstance(chunk, dict) else ""
-                    if text:
-                        yield ("token", {"text": text})
-                elif mode == "values":
-                    if chunk.get("replies"):
-                        replies = [str(r) for r in chunk["replies"]]
-                    if chunk.get("reply") is not None:
-                        reply_text = str(chunk["reply"])
-                    if chunk.get("thinkings") is not None:
-                        thinkings = [str(t) for t in chunk["thinkings"]]
+        # V2.4：自主闲聊同样一条 trace（mode="idle"，无用户轮次 → turn=None）
+        recorder, token = start_trace(
+            mode="idle",
+            session_id=context.session_id,
+            agent_id=context.agent_id,
+            turn=None,
+        )
+        finished = False
+        try:
+            async with self._locks.acquire(context.thread_id):
+                self._reset_tools()
+                async for mode, chunk in self._graph.astream(
+                    self._idle_state_in(context),
+                    config={"configurable": {"thread_id": context.thread_id}},
+                    stream_mode=["custom", "values"],
+                ):
+                    if mode == "custom":
+                        if isinstance(chunk, dict) and chunk.get("break"):
+                            yield ("message_break", {})
+                            continue
+                        text = str(chunk.get("text", "")) if isinstance(chunk, dict) else ""
+                        if text:
+                            recorder.first_token()
+                            yield ("token", {"text": text})
+                    elif mode == "values":
+                        if chunk.get("replies"):
+                            replies = [str(r) for r in chunk["replies"]]
+                        if chunk.get("reply") is not None:
+                            reply_text = str(chunk["reply"])
+                        if chunk.get("thinkings") is not None:
+                            thinkings = [str(t) for t in chunk["thinkings"]]
 
-            if not replies:
-                replies = [reply_text]
-            thinkings = normalize_thinkings(thinkings, len(replies))
+                if not replies:
+                    replies = [reply_text]
+                thinkings = normalize_thinkings(thinkings, len(replies))
 
-            reply_ids = await self._write_idle_snapshot(context.session_id, replies, thinkings)
+                reply_ids = await self._write_idle_snapshot(context.session_id, replies, thinkings)
 
-        yield "done", {
-            "session_id": context.session_id,
-            "agent_id": context.agent_id,
-            "reply": "\n".join(replies),
-            "replies": [
-                {"content": content, "message_id": mid, "thinking": th or None}
-                for content, mid, th in zip(replies, reply_ids, thinkings, strict=False)
-            ],
-            "user_message_id": 0,
-            "idle": True,
-        }
+            recorder.finish(error=current_error(), degraded=is_degraded())
+            finished = True
+            yield "done", {
+                "session_id": context.session_id,
+                "agent_id": context.agent_id,
+                "reply": "\n".join(replies),
+                "replies": [
+                    {"content": content, "message_id": mid, "thinking": th or None}
+                    for content, mid, th in zip(replies, reply_ids, thinkings, strict=False)
+                ],
+                "user_message_id": 0,
+                "idle": True,
+            }
+        except BaseException as exc:
+            if not finished:
+                recorder.finish(
+                    error=current_error()
+                    or {"type": type(exc).__name__, "message": str(exc)},
+                    degraded=is_degraded(),
+                )
+            raise
+        finally:
+            reset_trace(token)
 
     async def clear_idle(self, *, session_id: int) -> list[int]:
         """清空该会话的全部自主闲聊：删快照行 + 删对应语义记忆 + 清工作记忆窗口。
@@ -344,7 +520,7 @@ class ChatService:
         返回被移除的快照消息 id 列表。
         """
         context = await self.load_context(session_id=session_id)
-        async with self._lock_for(context.thread_id):
+        async with self._locks.acquire(context.thread_id):
             async with self._session_factory() as db:
                 rows = (
                     (
@@ -379,7 +555,7 @@ class ChatService:
         返回被移除的消息 id 列表（用户消息 + 连带回复）。
         """
         context = await self.load_context(session_id=session_id)
-        async with self._lock_for(context.thread_id):
+        async with self._locks.acquire(context.thread_id):
             async with self._session_factory() as db:
                 target = await db.get(Message, message_id)
                 if target is None or target.session_id != session_id:

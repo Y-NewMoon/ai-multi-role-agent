@@ -29,7 +29,11 @@ def _sse(event: str, data: dict) -> str:
 @router.post("", response_model=ChatResponse)
 async def chat(payload: ChatRequest, request: Request) -> ChatResponse:
     service: ChatService = request.app.state.chat_service
-    return await service.chat(session_id=payload.session_id, message=payload.message)
+    return await service.chat(
+        session_id=payload.session_id,
+        message=payload.message,
+        client_msg_id=payload.client_msg_id,
+    )
 
 
 @router.post("/stream")

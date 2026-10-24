@@ -1,13 +1,17 @@
 """基于官方 openai SDK 的 OpenAI 兼容 Provider（DeepSeek 等）。"""
 
 import asyncio
+import json
 import logging
+import uuid
 from collections.abc import AsyncIterator
 
 from openai import AsyncOpenAI, OpenAIError
 
 from app.core.errors import UpstreamError
-from app.llm.base import ChatMessage, LLMProvider
+from app.llm.base import ChatMessage, LLMProvider, LLMReply
+from app.llm.dsml import has_dsml_marker, parse_dsml_content
+from app.skills.base import ToolCall
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +57,65 @@ class OpenAICompatProvider(LLMProvider):
             logger.exception("LLM 非流式调用失败（model=%s）", self._model)
             raise UpstreamError("模型服务调用失败，请稍后再试") from exc
         return resp.choices[0].message.content or ""
+
+    async def generate_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        *,
+        tool_choice: str | dict = "auto",
+        temperature: float = 0.0,
+    ) -> LLMReply:
+        """支持 tools 的非流式调用（契约 §2.3）；`arguments` JSON 解析失败保留 `{"_raw": ...}`。"""
+        kwargs: dict = {
+            "model": self._model,
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = tool_choice
+        try:
+            resp = await self._client.chat.completions.create(**kwargs)
+        except OpenAIError as exc:
+            logger.exception("LLM 工具调用失败（model=%s）", self._model)
+            raise UpstreamError("模型服务调用失败，请稍后再试") from exc
+
+        message = resp.choices[0].message
+        calls: list[ToolCall] = []
+        for raw_call in getattr(message, "tool_calls", None) or []:
+            raw_args = getattr(raw_call.function, "arguments", "") or ""
+            try:
+                parsed = json.loads(raw_args) if raw_args else {}
+            except json.JSONDecodeError:
+                parsed = {"_raw": raw_args}
+            if not isinstance(parsed, dict):
+                parsed = {"_raw": raw_args}
+            calls.append(
+                ToolCall(
+                    id=raw_call.id or uuid.uuid4().hex,
+                    name=raw_call.function.name,
+                    arguments=parsed,
+                )
+            )
+        content = message.content or ""
+        if not calls and has_dsml_marker(content):
+            # 个别轮次模型把工具调用渲染成 DSML 文本：解析回 tool_calls 继续走工具循环；
+            # 解析失败则丢弃文本（返回空 content），由上层空回复兜底重试，原文不落库。
+            parsed_calls, cleaned, _ = parse_dsml_content(content)
+            if parsed_calls:
+                logger.warning(
+                    "检测到 DSML 文本工具调用，已解析 %d 个 tool_call（model=%s）",
+                    len(parsed_calls),
+                    self._model,
+                )
+                calls, content = parsed_calls, cleaned
+            else:
+                logger.warning(
+                    "检测到无法解析的 DSML 文本，已丢弃以避免污染历史（model=%s）", self._model
+                )
+                content = ""
+        return LLMReply(content=content, tool_calls=calls)
 
     async def astream(self, messages: list[ChatMessage]) -> AsyncIterator[str]:
         """逐段产出回复文本；连接抖动时自动重试，中途断连则续写而非重头开始。

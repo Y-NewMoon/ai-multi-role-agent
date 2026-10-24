@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-10-17T21:53:49",
+  "git_sha": "f90fdb5",
+  "suite_version": "v2.0.0",
+  "split": "all",
+  "storage": "postgres:roleplay_test",
+  "llm_enabled": true,
+  "judge": {
+    "model": "deepseek-chat",
+    "rubric_version": "r1",
+    "temperature": 0
+  },
+  "metrics": {
+    "golden": {
+      "isolation_leaks": 0,
+      "memory_hit_rate": 1.0,
+      "forbid_violations": 0
+    },
+    "scenario": {
+      "persona_pass": 1.0,
+      "boundary_pass": 1.0
+    },
+    "adversarial": {
+      "refusal_rate": 1.0,
+      "persona_intact_rate": 1.0
+    },
+    "retrieval": {
+      "hit@1": 0.95,
+      "hit@3": 1.0,
+      "mrr": 0.975,
+      "ndcg@10": 0.9744904758630006
+    },
+    "system": {
+      "p50_first_token_ms": null,
+      "p95_first_token_ms": null,
+      "tokens_per_turn": null,
+      "cost_cny_per_turn": null
+    }
+  },
+  "baseline": {
+    "path": null,
+    "delta": {}
+  },
+  "failures": [
+    {
+      "suite": "retrieval",
+      "id": "ret-001",
+      "reason": "top-1 未命中（top-3 命中）"
+    },
+    {
+      "suite": "retrieval",
+      "id": "ret-006",
+      "reason": "top-1 未命中（top-3 命中）"
+    },
+    {
+      "suite": "retrieval",
+      "id": "ret-015",
+      "reason": "top-1 未命中（top-3 命中）"
+    }
+  ]
+}

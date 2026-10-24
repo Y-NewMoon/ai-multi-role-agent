@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "suite": "skill_use",
+  "generated_at": "2026-10-20T21:10:11",
+  "git_sha": "829baca",
+  "metrics": {
+    "trigger_accuracy": 1.0,
+    "argument_accuracy": 1.0,
+    "no_tool_accuracy": 1.0,
+    "unexpected_error_rate": 0.0,
+    "avg_rounds": 0.8333333333333334,
+    "queries": 30,
+    "skipped": false,
+    "skip_reason": null
+  },
+  "manifest": null
+}

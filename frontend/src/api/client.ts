@@ -6,6 +6,8 @@ export interface Agent {
   persona_prompt: string
   background: string | null
   avatar: string | null
+  /** V2.2 工具白名单；空数组表示该角色不绑定任何工具。 */
+  allowed_skills: string[]
   created_at: string
 }
 
@@ -125,6 +127,7 @@ export interface AgentInput {
   persona_prompt: string
   background: string | null
   avatar: string | null
+  allowed_skills: string[]
 }
 
 export async function createAgent(input: AgentInput): Promise<Agent> {
@@ -166,14 +169,30 @@ export async function uploadAvatar(file: File): Promise<string> {
   return body.url
 }
 
-export async function createSession(agentId: number): Promise<Session> {
+export async function createSession(agentId: number, title?: string): Promise<Session> {
   return request<Session>(
     await fetch(`${BASE}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agent_id: agentId }),
+      body: JSON.stringify({ agent_id: agentId, title: title ?? null }),
     }),
   )
+}
+
+/** 重命名会话（title ≤255；传 null 表示清空标题）。 */
+export async function updateSession(sessionId: number, title: string | null): Promise<Session> {
+  return request<Session>(
+    await fetch(`${BASE}/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    }),
+  )
+}
+
+/** 删除会话：仅清理该会话的消息/checkpoint/摘要，角色与跨会话记忆保留。 */
+export async function deleteSession(sessionId: number): Promise<void> {
+  await requestVoid(await fetch(`${BASE}/sessions/${sessionId}`, { method: 'DELETE' }))
 }
 
 /** 某角色的全部会话（按 id 升序）。 */
@@ -411,4 +430,131 @@ export async function deleteGroup(groupId: number): Promise<void> {
 /** 将某角色移出群；若移出后群内已无成员，则连同该群一并删除。 */
 export async function removeGroupMember(groupId: number, agentId: number): Promise<void> {
   await requestVoid(await fetch(`${BASE}/groups/${groupId}/members/${agentId}`, { method: 'DELETE' }))
+}
+
+// ===== 世界书（V2.1 契约 4.9）=====
+
+/** 文档元数据；后端不返回正文（编辑只能同 slug 重新导入）。 */
+export interface LoreDoc {
+  id: number
+  agent_id: number
+  slug: string
+  title: string
+  version: number
+  always_on: boolean
+  status: string
+  chunks: number
+  tokens: number
+  created_at: string
+  updated_at: string
+}
+
+export interface LoreDocInput {
+  agent_id: number
+  slug: string
+  title: string
+  content: string
+  always_on: boolean
+}
+
+export interface LoreImportResult {
+  doc_id: number
+  version: number
+  chunks: number
+  tokens: number
+  changed: boolean
+}
+
+export interface LoreReindexResult {
+  agent_id: number
+  dry_run: boolean
+  documents: number
+  chunks_rebuilt: number
+}
+
+export async function listLoreDocs(agentId: number): Promise<LoreDoc[]> {
+  return request<LoreDoc[]>(await fetch(`${BASE}/lore/docs?agent_id=${agentId}`))
+}
+
+/** 导入或更新一篇设定：同 slug 即更新，version+1。 */
+export async function importLoreDoc(input: LoreDocInput): Promise<LoreImportResult> {
+  return request<LoreImportResult>(
+    await fetch(`${BASE}/lore/docs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }),
+  )
+}
+
+/** 软删一篇设定（文档与 chunk 置 deleted 并清索引）。 */
+export async function deleteLoreDoc(docId: number): Promise<void> {
+  await requestVoid(await fetch(`${BASE}/lore/docs/${docId}`, { method: 'DELETE' }))
+}
+
+/** 增量重建索引；`dryRun` 只统计不写入（前端「检查」用它判断导入是否完整）。 */
+export async function reindexLore(agentId: number, dryRun: boolean): Promise<LoreReindexResult> {
+  return request<LoreReindexResult>(
+    await fetch(`${BASE}/lore/reindex`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent_id: agentId, dry_run: dryRun }),
+    }),
+  )
+}
+
+// ===== 提醒 HITL（V2.2 契约 §2.8）=====
+
+export interface Reminder {
+  id: number
+  agent_id: number
+  session_id: number
+  content: string
+  remind_at: string
+  /** pending / active / cancelled / fired */
+  status: string
+  idempotent: boolean
+}
+
+export async function listReminders(agentId: number, sessionId: number): Promise<Reminder[]> {
+  return request<Reminder[]>(
+    await fetch(`${BASE}/reminders?agent_id=${agentId}&session_id=${sessionId}`),
+  )
+}
+
+/** pending → active（幂等）。 */
+export async function confirmReminder(reminderId: number): Promise<Reminder> {
+  return request<Reminder>(
+    await fetch(`${BASE}/reminders/${reminderId}/confirm`, { method: 'POST' }),
+  )
+}
+
+/** pending/active → cancelled（幂等）。 */
+export async function cancelReminder(reminderId: number): Promise<void> {
+  await requestVoid(await fetch(`${BASE}/reminders/${reminderId}`, { method: 'DELETE' }))
+}
+
+// ===== 运行状态（V2.4 /health）=====
+
+export interface HealthInfo {
+  status: string
+  llm_provider: string
+  fake_llm_calls: number | null
+  database: string | null
+  embedding_provider: string
+  embedding_model: string | null
+  lore_enabled: boolean
+  lore_static_mode: boolean
+  memory_extract_enabled: boolean
+  memory_profile_enabled: boolean
+  memory_l2_enabled: boolean
+  memory_weighted_recall: boolean
+  trace_enabled: boolean
+  trace_dir: string
+  trace_sample_rate: number
+}
+
+/** 健康检查不在 /api/v1 下；开发代理已在 vite.config.ts 中转发 /health。 */
+export async function getHealth(): Promise<HealthInfo> {
+  return request<HealthInfo>(await fetch('/health'))
 }
