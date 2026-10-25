@@ -2,8 +2,9 @@
 
 方案 3.9：总预算 8k token（可配），按优先级裁剪。
 V2.1（契约 4.7）在原有段落之外新增 lore 段（always-on 设定 + 检索 lore）。
-V2.3（契约 §2.8）新增三段：profile（常驻）、facts、L2；均为空时不插入任何字符
-——保证 `memory_extract_enabled=false` 时与 V2.2 prompt 逐字一致。
+V2.3（契约 §2.8）新增三段：profile（常驻）、facts、L2；均为空时不插入任何字符。
+V3 M1：时间块常驻，不再与 V2.2 prompt 逐字一致；替换后的确定性口径是
+“给定同一 now + 同一 state + 同一配置，prompt 逐字稳定”（ADR-0012）。
 
 裁剪顺序（§2.8-3）：① always-on lore → ② 滚动摘要 → ③ 语义记忆 + facts
 → ④ L2 → ⑤ profile → ⑥ 检索 lore → ⑦ 近 N 轮。
@@ -104,7 +105,8 @@ def _build_system(
 ) -> str:
     """把 persona 基座与（可选的）时间/档案/设定资料/摘要/记忆/事实/L2/工具清单拼成 system 文本。
 
-    所有可选段均为空时与 V2.0/V2.1/V2.2 输出逐字一致（契约 §1.3-6）。
+    可选段均空时，除时间块外仍与 V2.0/V2.1/V2.2 输出一致；V3 M1 起时间块常驻，
+    “全空即逐字一致”的口径已被 ADR-0012 取代。
     新三段顺序固定：profile 在摘要之前；facts 紧随召回记忆；L2 在 facts 之后。
     V3 M1：时间块紧随 base（base 含闲聊指令时也一样），与 base 同级常驻、不参与裁剪。
     """

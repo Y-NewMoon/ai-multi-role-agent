@@ -270,6 +270,24 @@ async def run_golden(store, cases: list[dict], run_id: str) -> dict:
 # ---------------------------------------------------------------------------
 # scenario / adversarial：需真实 LLM
 # ---------------------------------------------------------------------------
+def _synthetic_turn_times(
+    base_now: datetime, index: int, total: int
+) -> tuple[str, str]:
+    """V3 M1（契约 §2.6）：第 i 轮 `at = base_now - (total-i)*5min`（末轮为 base_now-5min）。
+
+    `last_user_at` = 上一轮 `at`（首轮空串），供“你们上次说话是 …”一行。
+    """
+    at = base_now - timedelta(minutes=5 * (total - index))
+    last_user_at = (
+        (base_now - timedelta(minutes=5 * (total - index + 1))).isoformat(
+            timespec="seconds"
+        )
+        if index > 0
+        else ""
+    )
+    return at.isoformat(timespec="seconds"), last_user_at
+
+
 async def _run_turns(store, llm, case: dict, run_id: str) -> list[str]:
     """跑一个多轮用例，返回每轮回复；结束后清空该用例的记忆。
 
@@ -309,26 +327,14 @@ async def _run_turns(store, llm, case: dict, run_id: str) -> list[str]:
     )
     cfg = {"configurable": {"thread_id": f"{agent}:eval"}}
     replies: list[str] = []
-    # V3 M1（契约 §2.6）：第 i 轮 at = fixed_now - (len(turns)-i)*5min；末轮 == now。
-    # last_user_at = 上一轮 at（首轮空串），供“你们上次说话是 …”一行。
     base_now = clock.now()
     turns = list(case["turns"])
     try:
         for i, turn in enumerate(turns):
-            at = base_now - timedelta(minutes=5 * (len(turns) - i))
-            last_user_at = (
-                (base_now - timedelta(minutes=5 * (len(turns) - i + 1))).isoformat(
-                    timespec="seconds"
-                )
-                if i > 0
-                else ""
-            )
+            at, last_user_at = _synthetic_turn_times(base_now, i, len(turns))
             state_in = {
                 "messages": [
-                    HumanMessage(
-                        content=turn,
-                        additional_kwargs={"at": at.isoformat(timespec="seconds")},
-                    )
+                    HumanMessage(content=turn, additional_kwargs={"at": at}),
                 ],
                 "agent_id": agent,
                 "session_id": 0,
@@ -825,7 +831,14 @@ async def _main(argv: list[str]) -> int:
         finished_at=datetime.now().astimezone().isoformat(timespec="seconds"),
         env={
             "python": sys.version.split()[0],
-            "database": _db_name(settings.test_database_url or settings.database_url),
+            # R6：只有真的连上 Postgres 才记库名；InMemory/fallback 时 database=null，
+            # 实际后端一律写 storage，避免 manifest 与报告 storage 自相矛盾。
+            "database": (
+                _db_name(settings.test_database_url or settings.database_url)
+                if storage_label.startswith("postgres:")
+                else None
+            ),
+            "storage": storage_label,
             "llm_model": settings.llm_model if not args.no_llm else None,
             "embedding_model": embed_label,
             "rerank_model": None,

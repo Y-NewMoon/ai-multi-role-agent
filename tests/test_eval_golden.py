@@ -73,6 +73,24 @@ def test_select_cases_确定性():
     assert [c["id"] for c in a] == [c["id"] for c in b]
 
 
+def test_合成轮次时间与last_user_at():
+    """R5：run_eval 的 at / last_user_at 口径（契约 §2.6）有独立单测。"""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    base = datetime(2026, 10, 25, 10, 35, tzinfo=ZoneInfo("Asia/Shanghai"))
+    assert run_eval._synthetic_turn_times(base, 0, 3) == ("2026-10-25T10:20:00+08:00", "")
+    assert run_eval._synthetic_turn_times(base, 1, 3) == (
+        "2026-10-25T10:25:00+08:00",
+        "2026-10-25T10:20:00+08:00",
+    )
+    # 末轮 = now - 5min；last_user_at 取上一轮
+    assert run_eval._synthetic_turn_times(base, 2, 3) == (
+        "2026-10-25T10:30:00+08:00",
+        "2026-10-25T10:25:00+08:00",
+    )
+
+
 async def test_retrieval_冒烟():
     if not (ROOT / "eval" / "suites" / "retrieval.jsonl").exists():
         return

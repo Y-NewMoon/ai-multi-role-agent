@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import inspect
 import json
 import os
 import sys
@@ -160,6 +161,15 @@ async def _run(args: argparse.Namespace, engine: str) -> int:
 
     import report as report_mod
 
+    # R3：--extra-src 可能加载 < V2.6 的 compose_prompt（无 now 参数）。
+    # 按签名决定是否传 now，避免交叉校验臂 TypeError。
+    supports_now = "now" in inspect.signature(compose_prompt).parameters
+    if args.now and not supports_now:
+        print(
+            "[warn] --extra-src 加载的 compose_prompt 不支持 now：--now 对该臂不生效",
+            file=sys.stderr,
+        )
+
     try:
         # V3 M1：当前版本走统一时钟（支持 --now / EVAL_FIXED_NOW）
         from app.core import clock
@@ -267,7 +277,7 @@ async def _run(args: argparse.Namespace, engine: str) -> int:
                 state,
                 token_budget=settings.prompt_token_budget,
                 recent_rounds=recent_rounds,
-                now=base_now,
+                now=base_now if supports_now else None,
             )
             where = None
             if ROUND1_MARKER in snapshot["system"]:
@@ -372,7 +382,11 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="V2.3 长会话曲线（不调 LLM）")
     ap.add_argument("--engine", choices=("v22", "v23"), default="v23")
     ap.add_argument("--out", default=None, help="输出 JSON 路径（默认 eval/report/longsession-<run_id>.json）")
-    ap.add_argument("--extra-src", default=None, help="把旧版 src 插到 sys.path 最前（交叉校验用）")
+    ap.add_argument(
+        "--extra-src",
+        default=None,
+        help="把旧版 src 插到 sys.path 最前（交叉校验用；旧版 compose_prompt 无 now 参数时自动不传）",
+    )
     ap.add_argument("--rounds", type=int, default=100)
     ap.add_argument(
         "--now",
