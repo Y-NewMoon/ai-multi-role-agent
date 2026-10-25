@@ -1,10 +1,10 @@
 {
-  "run_id": "8613e5",
+  "run_id": "40763b",
   "command": "uv run python eval/run_eval.py --suite golden --ci",
-  "git_sha": "dd504ff",
-  "git_dirty": true,
-  "started_at": "2026-10-25T11:26:06+08:00",
-  "finished_at": "2026-10-25T11:26:17+08:00",
+  "git_sha": "902a81b",
+  "git_dirty": false,
+  "started_at": "2026-10-25T12:40:05+08:00",
+  "finished_at": "2026-10-25T12:40:16+08:00",
   "env": {
     "python": "3.13.14",
     "database": "roleplay_test",
@@ -19,7 +19,7 @@
     "fixtures_sha256": "123bce4881e96445d3bbcf0c66dd9200a449851a30b48e86efbcc788e48c7ca2"
   },
   "outputs": {
-    "report_sha256": "a54afa31234231b6fb2156d18d9fba211330fc28182c9853f1a045c04f9b3300",
+    "report_sha256": "54ead78bec6f8a3e00995b2c87a681d2114edbb6ebfbfaadd3899321b2c40ff3",
     "cases_sha256": null
   },
   "usage": {

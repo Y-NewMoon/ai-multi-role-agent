@@ -1,10 +1,10 @@
 {
-  "run_id": "20261025-103500",
+  "run_id": "20261025-123951",
   "command": "uv run python scripts/run_long_session.py --engine v23 --out eval/report/longsession-v3m1.json --now 2026-10-25T10:35:00+08:00",
-  "git_sha": "dd504ff",
-  "git_dirty": true,
-  "started_at": "2026-10-25T10:35:00+08:00",
-  "finished_at": "2026-10-25T10:35:00+08:00",
+  "git_sha": "902a81b",
+  "git_dirty": false,
+  "started_at": "2026-10-25T12:39:51+08:00",
+  "finished_at": "2026-10-25T12:39:51+08:00",
   "env": {
     "python": "3.13.14",
     "database": null,
@@ -16,7 +16,7 @@
   },
   "inputs": {
     "suite_sha256": null,
-    "fixtures_sha256": "e74e8517d1793ac4646c9f5f106a6f8a31bb1b5f50e6b7b14ebbbf07fa8df118"
+    "fixtures_sha256": "0b311110e6b3f646d652f08c39ad980699547a6cf8715fe221131ed9cf50469b"
   },
   "outputs": {
     "report_sha256": "75aec872b2b18ad837ec92f037884c77370ca1174bc88226238fc003e265c653",
