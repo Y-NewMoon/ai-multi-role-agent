@@ -21,8 +21,9 @@ import hashlib
 import json
 import os
 import sys
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "eval" / "report"
@@ -165,18 +166,19 @@ async def _run(args: argparse.Namespace, engine: str) -> int:
 
         base_now = clock.now()
         eval_fixed_now = clock.fixed_now_raw()
+        tz = clock.TZ
     except ImportError:
         # --extra-src 交叉校验用的是旧版 src（无 app.core.clock）：退回真实时间
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-
-        base_now = datetime.now(ZoneInfo("Asia/Shanghai"))
+        tz = ZoneInfo("Asia/Shanghai")
+        base_now = datetime.now(tz)
         eval_fixed_now = None
 
     settings = get_settings()
     prompt_version = getattr(settings, "prompt_version", None)
-    run_id = base_now.strftime("%Y%m%d-%H%M%S")
-    started_at = base_now.isoformat(timespec="seconds")
+    # R1：manifest 的运行时刻用墙钟；base_now 只是合成消息的“模拟时刻”
+    started_dt = datetime.now(tz)
+    run_id = started_dt.strftime("%Y%m%d-%H%M%S")
+    started_at = started_dt.isoformat(timespec="seconds")
 
     # v22 = V2.2 行为：摘要触发 20、无 profile/facts/L2；v23 = 当前配置默认行为
     trigger = 20 if engine == "v22" else settings.summary_trigger_rounds
@@ -331,7 +333,7 @@ async def _run(args: argparse.Namespace, engine: str) -> int:
         + (f" --extra-src {args.extra_src}" if args.extra_src else "")
         + (f" --now {args.now}" if args.now else ""),
         started_at=started_at,
-        finished_at=base_now.isoformat(timespec="seconds"),
+        finished_at=datetime.now(tz).isoformat(timespec="seconds"),
         env={
             "python": sys.version.split()[0],
             "database": None,
