@@ -1,0 +1,35 @@
+{
+  "run_id": "20261025-103500",
+  "command": "uv run python scripts/run_long_session.py --engine v23 --out eval/report/longsession-v3m1.json --now 2026-10-25T10:35:00+08:00",
+  "git_sha": "dd504ff",
+  "git_dirty": true,
+  "started_at": "2026-10-25T10:35:00+08:00",
+  "finished_at": "2026-10-25T10:35:00+08:00",
+  "env": {
+    "python": "3.13.14",
+    "database": null,
+    "llm_model": null,
+    "embedding_model": null,
+    "rerank_model": null,
+    "prompt_version": "v3",
+    "eval_fixed_now": "2026-10-25T10:35:00+08:00"
+  },
+  "inputs": {
+    "suite_sha256": null,
+    "fixtures_sha256": "e74e8517d1793ac4646c9f5f106a6f8a31bb1b5f50e6b7b14ebbbf07fa8df118"
+  },
+  "outputs": {
+    "report_sha256": "75aec872b2b18ad837ec92f037884c77370ca1174bc88226238fc003e265c653",
+    "cases_sha256": null
+  },
+  "usage": {
+    "llm_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "judge_cache_hits": 0,
+    "judge_cache_misses": 0,
+    "budget_prompt_tokens": 0,
+    "within_budget": true
+  },
+  "budget_section": "4.6#6"
+}

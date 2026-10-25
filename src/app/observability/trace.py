@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 logger = logging.getLogger(__name__)
 
 TRACE_VERSION = "1.0"
-PROMPT_VERSION_DEFAULT = "v2.6"
+PROMPT_VERSION_DEFAULT = "v3"
 
 # 项目固定单一时区；trace 时间戳与按天文件名都以它为准，不读宿主时区。
 TZ = ZoneInfo("Asia/Shanghai")

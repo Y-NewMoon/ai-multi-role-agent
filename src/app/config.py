@@ -101,7 +101,9 @@ class Settings(BaseSettings):
     trace_sample_rate: float = 1.0  # 0~1
     trace_max_field_chars: int = 200
     trace_memory_stats: bool = False  # C-03 观察：true 时每轮多一次 asearch(limit=1000)
-    prompt_version: str = "v2.6"
+    prompt_version: str = "v3"
+    # V3 M1：冻结时钟（仅评测/测试用；未设置走真实时间，见 app/core/clock.py）
+    eval_fixed_now: str | None = None
 
     # ===== 成本（V2.4；默认仅示例，按账单覆盖）=====
     llm_price_input_cny_per_1m: float = 2.0

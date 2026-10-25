@@ -1,0 +1,36 @@
+{
+  "run_id": "8613e5",
+  "command": "uv run python eval/run_eval.py --suite golden --ci",
+  "git_sha": "dd504ff",
+  "git_dirty": true,
+  "started_at": "2026-10-25T11:26:06+08:00",
+  "finished_at": "2026-10-25T11:26:17+08:00",
+  "env": {
+    "python": "3.13.14",
+    "database": "roleplay_test",
+    "llm_model": null,
+    "embedding_model": "fake",
+    "rerank_model": null,
+    "prompt_version": "v3",
+    "eval_fixed_now": "2026-10-25T10:35:00+08:00"
+  },
+  "inputs": {
+    "suite_sha256": "075805f69ed7f1f53beda429f371e14c031c058d43dcf3a6d61704af1fd28c9e",
+    "fixtures_sha256": "123bce4881e96445d3bbcf0c66dd9200a449851a30b48e86efbcc788e48c7ca2"
+  },
+  "outputs": {
+    "report_sha256": "a54afa31234231b6fb2156d18d9fba211330fc28182c9853f1a045c04f9b3300",
+    "cases_sha256": null
+  },
+  "usage": {
+    "llm_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "judge_cache_hits": 0,
+    "judge_cache_misses": 0,
+    "estimator": "cjk1_other4",
+    "budget_prompt_tokens": 0,
+    "within_budget": true
+  },
+  "budget_section": "4.6#5"
+}

@@ -10,6 +10,7 @@ SSE 时序（ADR-0003 延续到群聊）：`token` / `turn_done` 为角色级；
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.agents.nodes.generate import normalize_thinkings
 from app.agents.supervisor import GroupMember, Supervisor
 from app.agents.thread_state import remove_thread_messages, thread_message_contents
+from app.core import clock
 from app.core.errors import AppError, NotFoundError
 from app.core.locks import KeyedLockPool
 from app.db.models import Agent, GroupMessage
@@ -29,6 +31,8 @@ from app.db.models import GroupSession
 from app.llm.base import LLMProvider
 from app.memory.store import MemoryStore
 from app.schemas.group import GroupCreate
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -294,6 +298,35 @@ class GroupService:
 
     # ===== 一轮群聊 =====
 
+    async def _last_user_at(self, group_session_id: int) -> str | None:
+        """该群上一条用户发言时间（ISO 8601 带 +08:00）；查不到/失败返回 None。
+
+        V3 M1 D10：在 `_append` 本轮用户消息之前取，语义与私聊一致；失败 fail-soft。
+        """
+        try:
+            async with self._session_factory() as db:
+                created = (
+                    await db.execute(
+                        select(GroupMessage.created_at)
+                        .where(
+                            GroupMessage.group_session_id == group_session_id,
+                            GroupMessage.role == "user",
+                        )
+                        .order_by(GroupMessage.id.desc())
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+        except Exception as exc:  # noqa: BLE001 - 时间感是增强项，不能成为可用性风险
+            logger.warning(
+                "取 last_user_at 失败（group=%s）：%s", group_session_id, exc
+            )
+            return None
+        if created is None:
+            return None
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=clock.TZ)
+        return created.astimezone(clock.TZ).isoformat(timespec="seconds")
+
     async def _next_turn(self, group_session_id: int) -> int | None:
         """该群用户消息序号（1-based，落本轮用户消息之前取数）；取不到为 None。"""
         try:
@@ -320,6 +353,8 @@ class GroupService:
             # V2.4：同一轮群聊共享 parent_trace_id（每个发言人一条 trace，不写汇总条）
             parent_trace_id = uuid.uuid4().hex
             turn = await self._next_turn(group_session_id)
+            # V3 M1：必须先取（此时本轮用户消息尚未落库），再 _append
+            last_user_at = await self._last_user_at(group_session_id)
             # 1) 用户消息：落快照 + 扇出给全部成员（ADR-0004 §3.2）
             user_msg_id = await self._append(
                 group_session_id, agent_id=None, role="user", content=message
@@ -341,6 +376,7 @@ class GroupService:
                 user_message=message,
                 parent_trace_id=parent_trace_id,
                 turn=turn,
+                last_user_at=last_user_at,
             ):
                 if event == "turn_done":
                     agent_id = int(data["agent_id"])
@@ -411,6 +447,8 @@ class GroupService:
         group_session_id = context.group_session_id
         async with self._locks.acquire(f"group:{group_session_id}"):
             rotate_after = await self._last_speaker(group_session_id)
+            # V3 M1：闲聊轮没有新用户消息，但仍要带上“上次用户开口”时间
+            last_user_at = await self._last_user_at(group_session_id)
             # V2.4：群聊自主闲聊同样按发言人各一条 trace（mode="group_idle"）
             parent_trace_id = uuid.uuid4().hex
             supervisor = Supervisor(
@@ -428,6 +466,7 @@ class GroupService:
                 turn_max_messages=self._idle_turn_max_messages,
                 rotate_after=rotate_after,
                 parent_trace_id=parent_trace_id,
+                last_user_at=last_user_at,
             ):
                 if event == "turn_done":
                     agent_id = int(data["agent_id"])

@@ -32,9 +32,10 @@ import asyncio
 import hashlib
 import importlib.util
 import json
+import os
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,6 +52,7 @@ from psycopg.rows import dict_row  # noqa: E402
 from psycopg_pool import AsyncConnectionPool  # noqa: E402
 
 from app.config import get_settings  # noqa: E402
+from app.core import clock  # noqa: E402
 from app.memory.namespace import memory_namespace  # noqa: E402
 from app.memory.store import MemoryStore  # noqa: E402
 
@@ -307,15 +309,33 @@ async def _run_turns(store, llm, case: dict, run_id: str) -> list[str]:
     )
     cfg = {"configurable": {"thread_id": f"{agent}:eval"}}
     replies: list[str] = []
+    # V3 M1（契约 §2.6）：第 i 轮 at = fixed_now - (len(turns)-i)*5min；末轮 == now。
+    # last_user_at = 上一轮 at（首轮空串），供“你们上次说话是 …”一行。
+    base_now = clock.now()
+    turns = list(case["turns"])
     try:
-        for turn in case["turns"]:
+        for i, turn in enumerate(turns):
+            at = base_now - timedelta(minutes=5 * (len(turns) - i))
+            last_user_at = (
+                (base_now - timedelta(minutes=5 * (len(turns) - i + 1))).isoformat(
+                    timespec="seconds"
+                )
+                if i > 0
+                else ""
+            )
             state_in = {
-                "messages": [HumanMessage(content=turn)],
+                "messages": [
+                    HumanMessage(
+                        content=turn,
+                        additional_kwargs={"at": at.isoformat(timespec="seconds")},
+                    )
+                ],
                 "agent_id": agent,
                 "session_id": 0,
                 "agent_name": case.get("name") or _REF_NAME,
                 "persona_prompt": case.get("persona") or _REF_PERSONA,
                 "background": case.get("background") or _REF_BACKGROUND,
+                "last_user_at": last_user_at,
             }
             result = await graph.ainvoke(state_in, config=cfg)
             replies.append(str(result.get("reply", "")))
@@ -668,6 +688,11 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     ap.add_argument("--no-llm", action="store_true", help="跳过所有需要 LLM 的指标（相关指标记 null）")
     ap.add_argument("--inmemory", action="store_true", help="强制 InMemoryStore（默认走真库 roleplay_test）")
     ap.add_argument("--ci", action="store_true", help="等价 --suite golden --no-llm --split test")
+    ap.add_argument(
+        "--now",
+        default=None,
+        help="冻结时钟（ISO 8601；等价设置 EVAL_FIXED_NOW，仅评测用）",
+    )
     args = ap.parse_args(argv)
     if args.sample is not None and args.sample <= 0:
         ap.error("--sample 必须为正整数")
@@ -684,6 +709,10 @@ def _db_name(url: str) -> str | None:
 
 async def _main(argv: list[str]) -> int:
     args = _parse_args(argv)
+    if args.now:
+        # 非法值直接报错（不静默回退）；合法则交给 clock 的统一入口
+        clock.parse_fixed_now(args.now)
+        os.environ[clock.ENV_KEY] = args.now
     started_at = datetime.now().astimezone().isoformat(timespec="seconds")
     if args.ci:
         # T12 #6：--ci 会覆盖 --suite/--split，显式提示避免 `--ci --split dev` 被误解。
@@ -800,6 +829,9 @@ async def _main(argv: list[str]) -> int:
             "llm_model": settings.llm_model if not args.no_llm else None,
             "embedding_model": embed_label,
             "rerank_model": None,
+            # V3 M1：跨版本比较必须知道 prompt 版本与冻结时钟（未冻结写 null，不省略键）
+            "prompt_version": settings.prompt_version,
+            "eval_fixed_now": clock.fixed_now_raw(),
         },
         inputs={
             "suite_sha256": suite_sha.hexdigest(),

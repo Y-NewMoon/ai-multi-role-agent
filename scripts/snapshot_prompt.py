@@ -15,6 +15,7 @@ V3 M1 之后输出会永久改变；除非明确要更新对照，否则不要�
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import hashlib
 import json
@@ -25,12 +26,13 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT_DIR = ROOT / "eval" / "baseline" / "v2.5-prompt-sample"
+DEFAULT_OUT_DIR = ROOT / "eval" / "baseline" / "v2.5-prompt-sample"
 sys.path.insert(0, str(ROOT / "src"))
 
 from langchain_core.messages import AIMessage, HumanMessage  # noqa: E402
 
 from app.agents.nodes.compose_prompt import _estimate_tokens, compose_prompt  # noqa: E402
+from app.core import clock  # noqa: E402
 
 SYSTEM_PROMPT = (
     "你是「清和」，一位在城南经营旧书店的年轻店主，今年二十九岁。"
@@ -145,17 +147,39 @@ def _render_txt(prompt: list[dict]) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    ap = argparse.ArgumentParser(description="冻结一份 compose_prompt 输出（不连库、不调 LLM）")
+    ap.add_argument(
+        "--out-dir",
+        default=str(DEFAULT_OUT_DIR),
+        help="产物目录（默认 eval/baseline/v2.5-prompt-sample）",
+    )
+    ap.add_argument(
+        "--fixed-now",
+        default=None,
+        help="冻结时钟（ISO 8601；等价设置 EVAL_FIXED_NOW）",
+    )
+    return ap.parse_args(argv)
+
+
 async def main() -> None:
+    args = _parse_args(sys.argv[1:])
+    if args.fixed_now:
+        # 校验后写进进程环境变量；compose_prompt 的时间块走 clock.now()
+        clock.parse_fixed_now(args.fixed_now)
+        os.environ[clock.ENV_KEY] = args.fixed_now
+    out_dir = Path(args.out_dir)
+
     result = await compose_prompt(
         STATE, token_budget=8000, recent_rounds=10, skill_registry=None
     )
     prompt = result["prompt"]
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    prompt_json = OUT_DIR / "prompt.json"
-    prompt_txt = OUT_DIR / "prompt.txt"
-    meta_json = OUT_DIR / "meta.json"
-    readme = OUT_DIR / "README.md"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    prompt_json = out_dir / "prompt.json"
+    prompt_txt = out_dir / "prompt.txt"
+    meta_json = out_dir / "meta.json"
+    readme = out_dir / "README.md"
 
     prompt_json.write_text(
         json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -176,6 +200,7 @@ async def main() -> None:
         "git_dirty": dirty,
         "prompt_version_env": os.environ.get("PROMPT_VERSION"),
         "prompt_version": os.environ.get("PROMPT_VERSION") or _cfg("prompt_version", "v2.6"),
+        "eval_fixed_now": os.environ.get(clock.ENV_KEY),
         "config": {
             "prompt_token_budget": _cfg("prompt_token_budget", 8000),
             "prompt_recent_rounds": _cfg("prompt_recent_rounds", 10),
@@ -207,15 +232,45 @@ async def main() -> None:
         json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     if not readme.exists():
-        readme.write_text(_README, encoding="utf-8")
+        readme.write_text(_README_V3 if args.fixed_now else _README, encoding="utf-8")
 
-    print(f"prompt.json / prompt.txt / meta.json 已写入 {OUT_DIR}")
+    print(f"prompt.json / prompt.txt / meta.json 已写入 {out_dir}")
     print(
         f"estimated_tokens={total_tokens} "
         f"(system={system_tokens}, messages={total_tokens - system_tokens}, "
         f"messages_count={len(prompt) - 1})"
     )
 
+
+_README_V3 = """# V3 M1 prompt 样本（after）
+
+## 这是什么
+
+一份**固定 state** + **固定时钟**（`EVAL_FIXED_NOW=2026-10-25T10:35:00+08:00`）经
+`src/app/agents/nodes/compose_prompt.py::compose_prompt` 拼装后的完整输出。
+state 完全离线构造，不读数据库、不调用 LLM、不出网。
+
+- `prompt.json`：`compose_prompt` 返回值原样（`{"prompt": [...]}`）。
+- `prompt.txt`：同一内容的可读版，system 在前，逐条 message 标 role。
+- `meta.json`：日期、git sha/dirty、`prompt_version=v3`、`eval_fixed_now`、关键配置、
+  token 估算与两个产物的 sha256。
+
+## before / after
+
+- **before**：`eval/baseline/v2.5-prompt-sample/`（V3 之前的对照，原样保留，不得覆盖）。
+- **after**：本目录。与 before 的差异只有两类：system 中 `base` 之后多出【当前时间】三行；
+  消息 content 多出 `[MM-DD HH:mm]` / `[HH:mm]` 前缀（本样本的固定 state 消息**没有** `at`，
+  因此消息行没有前缀——这是有意的，用来只体现时间块差异）。
+
+## 如何重新生成
+
+```powershell
+uv run python scripts/snapshot_prompt.py --out-dir eval/baseline/v3-prompt-sample `
+  --fixed-now 2026-10-25T10:35:00+08:00
+```
+
+固定 `now` + 固定 state 下输出逐字稳定；换 `now` 必然改变 `prompt.txt` 与哈希。
+"""
 
 _README = """# V2.5 prompt 样本（冻结）
 

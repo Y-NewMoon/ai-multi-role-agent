@@ -1,0 +1,66 @@
+{
+  "schema_version": "1.1",
+  "generated_at": "2026-10-25T11:26:16",
+  "git_sha": "dd504ff",
+  "suite_version": "v2.0.0",
+  "split": "test",
+  "storage": "inmemory(fallback)",
+  "llm_enabled": false,
+  "judge": {
+    "model": "deepseek-chat",
+    "rubric_version": "r2",
+    "temperature": 0
+  },
+  "metrics": {
+    "golden": {
+      "isolation_leaks": 0,
+      "memory_hit_rate": 1.0,
+      "forbid_violations": 0
+    },
+    "scenario": {
+      "persona_pass": null,
+      "boundary_pass": null
+    },
+    "adversarial": {
+      "refusal_rate": null,
+      "persona_intact_rate": null,
+      "expect_consumed": null,
+      "source_counts": null
+    },
+    "retrieval": {
+      "hit@1": null,
+      "hit@3": null,
+      "mrr": null,
+      "ndcg@10": null
+    },
+    "retrieval_lore": {
+      "hit@1": null,
+      "hit@3": null,
+      "mrr": null,
+      "ndcg@10": null,
+      "queries": null,
+      "rerank": null,
+      "skipped": null,
+      "skip_reason": null
+    },
+    "system": {
+      "p50_first_token_ms": null,
+      "p95_first_token_ms": null,
+      "tokens_per_turn": null,
+      "cost_cny_per_turn": null
+    }
+  },
+  "baseline": {
+    "path": null,
+    "delta": {}
+  },
+  "failures": [],
+  "usage": {
+    "llm_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "judge_cache_hits": 0,
+    "judge_cache_misses": 0,
+    "estimator": "cjk1_other4"
+  }
+}

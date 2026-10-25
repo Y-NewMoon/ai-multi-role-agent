@@ -1,0 +1,30 @@
+{
+  "generated_at": "2026-10-25T11:25:53+08:00",
+  "git_sha": "dd504ff13fdd59525285ec9172ed382fe8e495a3",
+  "git_dirty": true,
+  "prompt_version_env": null,
+  "prompt_version": "v3",
+  "eval_fixed_now": "2026-10-25T10:35:00+08:00",
+  "config": {
+    "prompt_token_budget": 8000,
+    "prompt_recent_rounds": 10,
+    "compose_token_budget": 8000,
+    "compose_recent_rounds": 10,
+    "summary_trigger_rounds": 10,
+    "llm_model": "deepseek-chat",
+    "embedding_model": "bge-m3",
+    "embedding_dims": 1024,
+    "allowed_skills": []
+  },
+  "tokens": {
+    "estimator": "_estimate_tokens（CJK 1 字/token，其余 4 字/token）",
+    "estimated_tokens": 780,
+    "system_tokens": 554,
+    "messages_tokens": 226,
+    "prompt_messages": 13
+  },
+  "files": {
+    "prompt.json": "59a953a8f7ee2049d157b2101e2d96a2a1e89afb1b36415b315bdd97a9345c65",
+    "prompt.txt": "e1507a7bf55d179566e2988ea61b9ba861c6d6286499781316ed492b4fd95aba"
+  }
+}

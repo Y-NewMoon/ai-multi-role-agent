@@ -1,0 +1,114 @@
+{
+  "schema_version": "1.0",
+  "engine": "v23",
+  "extra_src": null,
+  "rounds": 100,
+  "config": {
+    "token_budget": 8000,
+    "recent_rounds": 10,
+    "summary_trigger_rounds": 10,
+    "summary_chunk_rounds": 10,
+    "l2_every_merges": 3,
+    "prompt_version": "v3",
+    "eval_fixed_now": "2026-10-25T10:35:00+08:00"
+  },
+  "checkpoints": {
+    "10": {
+      "prompt_token": 557,
+      "sections": {
+        "base": 50,
+        "time": 64,
+        "profile": 17,
+        "facts": 28,
+        "recent": 398
+      },
+      "ratio": {
+        "base": 0.0898,
+        "time": 0.1149,
+        "profile": 0.0305,
+        "facts": 0.0503,
+        "recent": 0.7145
+      }
+    },
+    "20": {
+      "prompt_token": 823,
+      "sections": {
+        "base": 50,
+        "time": 64,
+        "profile": 17,
+        "summary": 243,
+        "facts": 28,
+        "recent": 421
+      },
+      "ratio": {
+        "base": 0.0608,
+        "time": 0.0778,
+        "profile": 0.0207,
+        "summary": 0.2953,
+        "facts": 0.034,
+        "recent": 0.5115
+      }
+    },
+    "50": {
+      "prompt_token": 1830,
+      "sections": {
+        "base": 50,
+        "time": 59,
+        "profile": 17,
+        "summary": 978,
+        "facts": 28,
+        "l2": 277,
+        "recent": 421
+      },
+      "ratio": {
+        "base": 0.0273,
+        "time": 0.0322,
+        "profile": 0.0093,
+        "summary": 0.5344,
+        "facts": 0.0153,
+        "l2": 0.1514,
+        "recent": 0.2301
+      }
+    },
+    "100": {
+      "prompt_token": 1876,
+      "sections": {
+        "base": 50,
+        "time": 61,
+        "profile": 17,
+        "summary": 1021,
+        "facts": 28,
+        "l2": 277,
+        "recent": 421
+      },
+      "ratio": {
+        "base": 0.0267,
+        "time": 0.0325,
+        "profile": 0.0091,
+        "summary": 0.5442,
+        "facts": 0.0149,
+        "l2": 0.1477,
+        "recent": 0.2244
+      }
+    }
+  },
+  "checkpoint_15": {
+    "round": 15,
+    "prompt_token": 613,
+    "round1_injected": true,
+    "where": "summary",
+    "summary_present": true
+  },
+  "round_100": {
+    "contains_facts": true,
+    "contains_l2": true,
+    "contains_round1": false
+  },
+  "usage": {
+    "llm_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "judge_cache_hits": 0,
+    "judge_cache_misses": 0
+  }
+}

@@ -22,6 +22,9 @@ class RolePlayState(TypedDict, total=False):
     agent_name: str
     persona_prompt: str
     background: str
+    # V3 M1：上一条 user 消息的时间（ISO 8601 带偏移）；无历史时为空串/缺省。
+    # 语义是“用户上次开口”，供 compose_prompt 渲染“你们上次说话是 …”。
+    last_user_at: str
 
     # —— 图内中间产物 ——
     system_prompt: str

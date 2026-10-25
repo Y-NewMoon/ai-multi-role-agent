@@ -154,7 +154,7 @@ npm run dev                                # http://localhost:5173
 | `TRACE_SAMPLE_RATE` | `1.0` | trace 采样率（0~1，越界按 1.0 并 warning） |
 | `TRACE_MAX_FIELD_CHARS` | `200` | trace 内文本字段截断长度（隐私 + 体积） |
 | `TRACE_MEMORY_STATS` | `false` | C-03 观察项；`true` 时每轮多一次 `asearch(limit=1000)` 统计 namespace 条目 |
-| `PROMPT_VERSION` | `v2.6` | 写入 trace 的 prompt 版本标识；工具角色的 prompt 自 v2.6 起含【当前时间】锚点 |
+| `PROMPT_VERSION` | `v3` | 写入 trace 的 prompt 版本标识；自 `v3` 起所有角色 prompt 均含【当前时间】与上次说话间隔（工具角色沿用 V2.6 的【可用工具】段） |
 | `LLM_PRICE_INPUT_CNY_PER_1M` | `2.0` | 输入价（元/百万 token），**示例值**，部署须按账单覆盖 |
 | `LLM_PRICE_OUTPUT_CNY_PER_1M` | `8.0` | 输出价（元/百万 token），**示例值** |
 | `LLM_MAX_CONCURRENCY` | `8` | 全局 LLM 并发上限（`asyncio.Semaphore`，<1 按 1 并 warning） |

@@ -4,6 +4,7 @@
 Windows 提示：psycopg 异步需 Selector 事件循环，请用 scripts/run_server.py 启动。
 """
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from psycopg_pool import AsyncConnectionPool
 from app.agents.graph import build_graph
 from app.api.v1 import api_router
 from app.config import get_settings
+from app.core.clock import fixed_now_raw, validate_fixed_now
 from app.core.error_handlers import register_exception_handlers
 from app.core.logging import configure_logging
 from app.db.base import create_engine, create_session_factory
@@ -41,6 +43,13 @@ from app.skills.executor import ToolExecutor
 async def lifespan(app: FastAPI):
     configure_logging()
     settings = get_settings()
+
+    # V3 M1：冻结时钟非法值启动即失败（不把错误带进请求链路）
+    validate_fixed_now()
+    frozen = fixed_now_raw()
+    logging.getLogger(__name__).info(
+        "EVAL_FIXED_NOW=%s（固定时钟%s）", frozen, "已生效" if frozen else "未设置"
+    )
 
     # V2.4：trace 文件写入（按天 JSONL）；写失败 fail-open，不影响请求
     trace_store = TraceStore(

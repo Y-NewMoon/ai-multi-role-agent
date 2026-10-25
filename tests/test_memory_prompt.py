@@ -1,11 +1,21 @@
 """V2.3 prompt 注入（契约 §2.8）：三段顺序、空段逐字一致、预算与裁剪。"""
 
+from datetime import datetime
+
 from langchain_core.messages import AIMessage, HumanMessage
 
-from app.agents.nodes.compose_prompt import compose_prompt
+from app.agents.nodes.compose_prompt import TZ, compose_prompt
 from app.agents.nodes.update_memory import update_memory
 from app.memory.store import MemoryStore
 from langgraph.store.memory import InMemoryStore
+
+# V3 M1：时间块常驻，逐字断言必须固定 now
+_FIXED_NOW = datetime(2026, 10, 24, 22, 31, tzinfo=TZ)
+_TIME_BLOCK = (
+    "【当前时间】\n"
+    "现在是 2026-10-24 22:31（Asia/Shanghai，周六）。\n"
+    "用户说「今晚8点35」「明天早上7点」这类相对时间时，先按此换算成绝对时间。"
+)
 
 
 def _state(**overrides) -> dict:
@@ -31,12 +41,13 @@ async def _system(state: dict, **kwargs) -> str:
 
 async def test_三段为空时与V22逐字一致():
     state = _state(recalled_memories=["甲"])
-    assert await _system(state) == "人设：茶艺师。\n\n【你记得的相关信息】\n- 甲"
+    expected = f"人设：茶艺师。\n\n{_TIME_BLOCK}\n\n【你记得的相关信息】\n- 甲"
+    assert await _system(state, now=_FIXED_NOW) == expected
     # 显式空字段（extract 关闭时 retrieve_memory 不写这些键）也不得插入字符
     state["user_profile"] = {}
     state["recalled_facts"] = []
     state["l2_portrait"] = ""
-    assert await _system(state) == "人设：茶艺师。\n\n【你记得的相关信息】\n- 甲"
+    assert await _system(state, now=_FIXED_NOW) == expected
 
 
 async def test_三段顺序固定():

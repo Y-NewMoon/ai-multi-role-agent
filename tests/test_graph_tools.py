@@ -92,15 +92,25 @@ def _state(**over) -> dict:
 
 # ---- 不变量 1：空白名单 prompt 逐字一致 ----
 
+_FIXED_NOW = datetime(2026, 10, 24, 22, 31, tzinfo=TZ)
+_TIME_BLOCK = (
+    f"{TIME_HEADER}\n"
+    "现在是 2026-10-24 22:31（Asia/Shanghai，周六）。\n"
+    "用户说「今晚8点35」「明天早上7点」这类相对时间时，先按此换算成绝对时间。"
+)
+
+
 async def test_compose_prompt_empty_whitelist_byte_identical():
     state = _state()
-    no_tools = await compose_prompt(state)
-    with_empty_registry = await compose_prompt(state, skill_registry=_registry(), allowed_skills=[])
+    no_tools = await compose_prompt(state, now=_FIXED_NOW)
+    with_empty_registry = await compose_prompt(
+        state, skill_registry=_registry(), allowed_skills=[], now=_FIXED_NOW
+    )
     assert no_tools == with_empty_registry
-    # 与 V2.1 逐字快照一致（system=人设、其后为近轮消息，无【可用工具】段）
+    # V3 M1：system=时间块（空人设），其后为近轮消息，无【可用工具】段
     assert no_tools == {
         "prompt": [
-            {"role": "system", "content": ""},
+            {"role": "system", "content": _TIME_BLOCK},
             {"role": "user", "content": "现在东京几点"},
         ]
     }
@@ -119,27 +129,25 @@ async def test_compose_prompt_adds_tools_section():
 async def test_current_time_block_is_injectable():
     """时间锚点可注入：固定 now 后段文本逐字可断言（不再依赖 datetime.now）。"""
     state = _state(allowed_skills=["get_current_time"])
-    fixed = datetime(2026, 10, 24, 22, 31, tzinfo=TZ)
-
-    out = await compose_prompt(state, skill_registry=_registry(), now=fixed)
+    out = await compose_prompt(state, skill_registry=_registry(), now=_FIXED_NOW)
 
     expected = (
         f"{TIME_HEADER}\n"
-        "现在是 2026-10-24 22:31（Asia/Shanghai，周六）。"
+        "现在是 2026-10-24 22:31（Asia/Shanghai，周六）。\n"
         "用户说「今晚8点35」「明天早上7点」这类相对时间时，先按此换算成绝对时间。"
     )
     assert expected in out["prompt"][0]["content"]
 
 
-async def test_no_tools_no_current_time_block():
-    """未启用工具的角色不插入时间锚点（V3 M1 前只做参数化，不扩大注入范围）。"""
+async def test_no_tools_still_has_current_time_block():
+    """V3 M1：无工具角色也必须有时间块（不再依赖 tools_block 非空）。"""
     state = _state(allowed_skills=[])
     out = await compose_prompt(
         state,
         skill_registry=_registry(),
-        now=datetime(2026, 10, 24, 22, 31, tzinfo=TZ),
+        now=_FIXED_NOW,
     )
-    assert TIME_HEADER not in out["prompt"][0]["content"]
+    assert out["prompt"][0]["content"] == _TIME_BLOCK
 
 
 # ---- 不变量 2：skill_registry=None 图拓扑不变 ----

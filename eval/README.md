@@ -87,6 +87,30 @@ CLI 全量参数：
 - **retrieval_lore**（V2.1）：真库 + 真嵌入跑**真实 Retriever**（三路召回 → RRF → rerank → 预算）的 hit@1 / hit@3 / MRR / nDCG@10；跳过时四个指标一律 `null`（不是 `0.0`）并写 `skip_reason`，见下节；
 - **system**（p50/p95 首 token、token 数、单轮成本）：依赖 V2.4 的 trace 采集，V2.0 不伪造数字，一律 `null`。
 
+## 固定时钟（V3 M1）
+
+V3 M1 起 prompt 含【当前时间】与上次说话间隔，时间来自唯一入口 `src/app/core/clock.py`。
+评测/测试用 `EVAL_FIXED_NOW` 冻结“现在”，同一时刻下 prompt 逐字可复现：
+
+```powershell
+# 方式 A：环境变量（作用于整个进程，后续所有命令共用同一时刻）
+$env:EVAL_FIXED_NOW="2026-10-25T10:35:00+08:00"
+uv run python eval/run_eval.py --suite golden --ci
+
+# 方式 B：命令行（脚本内等效设置 EVAL_FIXED_NOW）
+uv run python eval/run_eval.py --suite golden --ci --now 2026-10-25T10:35:00+08:00
+uv run python scripts/run_long_session.py --engine v23 --rounds 100 --now 2026-10-25T10:35:00+08:00
+uv run python scripts/snapshot_prompt.py --out-dir eval/baseline/v3-prompt-sample --fixed-now 2026-10-25T10:35:00+08:00
+```
+
+- 值须为 ISO 8601（`Z` 或 `+08:00` 均可；无偏移按 `Asia/Shanghai`）；非法值启动即失败，不静默回退。
+- **manifest 必填**：`env.prompt_version`（`v3`）与 `env.eval_fixed_now`（未冻结写 `null`，键不得省略）；
+  长会话报告另在 `config` 记录这两个值。
+- 测试侧 `tests/conftest.py` 的 autouse fixture 每个用例前删除 `EVAL_FIXED_NOW`，shell 环境污染不会串进单测。
+- **成本**：固定时钟本身不产生 LLM 调用；本节命令（golden `--ci` / 长会话 / 快照）均为 **0 真实 token**
+  （`usage.prompt_tokens=0`）。
+- 日常运行**不要**设置该变量，否则进程内“现在”永远停在同一时刻（`.env.example` 默认注释）。
+
 ## 怎么加用例
 
 1. 打开 `eval/suites/<suite>.jsonl`，按现有行的 schema 追加一行（UTF-8 无 BOM，`ensure_ascii=False`，**不要**改已有行）；

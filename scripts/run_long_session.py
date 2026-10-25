@@ -19,8 +19,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +36,7 @@ CHECKPOINTS = (10, 20, 50, 100)
 CHECKPOINT_15 = 15
 
 _SECTION_HEADERS = (
+    ("time", "【当前时间】"),
     ("lore", "【设定资料】"),
     ("profile", "【客人档案】"),
     ("summary", "【本会话摘要】"),
@@ -81,7 +83,16 @@ def _split_sections(system: str) -> dict[str, str]:
     return out
 
 
-def _build_state(engine: str, messages, summary: str, profile: dict, facts: list[dict], l2: str) -> dict:
+def _build_state(
+    engine: str,
+    messages,
+    summary: str,
+    profile: dict,
+    facts: list[dict],
+    l2: str,
+    *,
+    last_user_at: str | None = None,
+) -> dict:
     state: dict = {
         "system_prompt": BASE_PROMPT,
         "messages": list(messages),
@@ -90,6 +101,7 @@ def _build_state(engine: str, messages, summary: str, profile: dict, facts: list
         "summary": summary,
         "agent_id": 1,
         "session_id": 1,
+        "last_user_at": last_user_at or "",
     }
     if engine == "v23":
         state.update(
@@ -111,8 +123,11 @@ async def _snapshot(
     *,
     token_budget: int,
     recent_rounds: int,
+    now=None,
 ) -> dict:
     kwargs: dict = {"token_budget": token_budget, "recent_rounds": recent_rounds}
+    if now is not None:
+        kwargs["now"] = now
     if engine == "v23":
         # 当前默认值与 compose_prompt 的默认值一致；显式传入便于报告自证
         kwargs.update({"profile_ratio": 0.10, "l2_ratio": 0.05})
@@ -144,9 +159,24 @@ async def _run(args: argparse.Namespace, engine: str) -> int:
 
     import report as report_mod
 
+    try:
+        # V3 M1：当前版本走统一时钟（支持 --now / EVAL_FIXED_NOW）
+        from app.core import clock
+
+        base_now = clock.now()
+        eval_fixed_now = clock.fixed_now_raw()
+    except ImportError:
+        # --extra-src 交叉校验用的是旧版 src（无 app.core.clock）：退回真实时间
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        base_now = datetime.now(ZoneInfo("Asia/Shanghai"))
+        eval_fixed_now = None
+
     settings = get_settings()
-    run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
-    started_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    prompt_version = getattr(settings, "prompt_version", None)
+    run_id = base_now.strftime("%Y%m%d-%H%M%S")
+    started_at = base_now.isoformat(timespec="seconds")
 
     # v22 = V2.2 行为：摘要触发 20、无 profile/facts/L2；v23 = 当前配置默认行为
     trigger = 20 if engine == "v22" else settings.summary_trigger_rounds
@@ -165,14 +195,25 @@ async def _run(args: argparse.Namespace, engine: str) -> int:
     checkpoints: dict[str, dict] = {}
     checkpoint_15: dict | None = None
     last_snapshot: dict | None = None
-    now = datetime.now(UTC)
 
     for round_no in range(1, args.rounds + 1):
+        # V3 M1：合成时间按 30 分钟递进，末轮 == now；at 只给用户消息（契约 §2.3）
+        user_at = base_now - timedelta(minutes=30 * (args.rounds - round_no))
+        last_user_at = (
+            (user_at - timedelta(minutes=30)).isoformat(timespec="seconds")
+            if round_no > 1
+            else ""
+        )
         user_text = ROUND1_TEXT if round_no == 1 else (
             f"第{round_no}轮：今天又去了城南的旧书摊，翻到一本讲茶器的旧书。"
         )
         reply_text = f"第{round_no}轮：我给您续了茶，听您慢慢说。"
-        messages.append(HumanMessage(content=user_text))
+        messages.append(
+            HumanMessage(
+                content=user_text,
+                additional_kwargs={"at": user_at.isoformat(timespec="seconds")},
+            )
+        )
         messages.append(AIMessage(content=reply_text))
 
         if engine == "v23" and round_no == 3:
@@ -181,8 +222,8 @@ async def _run(args: argparse.Namespace, engine: str) -> int:
                     {
                         "text": text,
                         "importance": 0.8 - index * 0.1,
-                        "updated_at": now.isoformat(),
-                        "created_at": now.isoformat(),
+                        "updated_at": base_now.isoformat(),
+                        "created_at": base_now.isoformat(),
                     }
                 )
 
@@ -207,7 +248,15 @@ async def _run(args: argparse.Namespace, engine: str) -> int:
                 l2 = _l2_stub(l2_max_chars)
 
         if round_no in CHECKPOINTS or round_no == CHECKPOINT_15:
-            state = _build_state(engine, messages, summary, profile, facts, l2)
+            state = _build_state(
+                engine,
+                messages,
+                summary,
+                profile,
+                facts,
+                l2,
+                last_user_at=last_user_at,
+            )
             snapshot = await _snapshot(
                 compose_prompt,
                 _estimate_tokens,
@@ -216,6 +265,7 @@ async def _run(args: argparse.Namespace, engine: str) -> int:
                 state,
                 token_budget=settings.prompt_token_budget,
                 recent_rounds=recent_rounds,
+                now=base_now,
             )
             where = None
             if ROUND1_MARKER in snapshot["system"]:
@@ -251,6 +301,8 @@ async def _run(args: argparse.Namespace, engine: str) -> int:
             "summary_trigger_rounds": trigger,
             "summary_chunk_rounds": chunk,
             "l2_every_merges": every_merges if engine == "v23" else None,
+            "prompt_version": prompt_version,
+            "eval_fixed_now": eval_fixed_now,
         },
         "checkpoints": checkpoints,
         "checkpoint_15": checkpoint_15,
@@ -276,15 +328,18 @@ async def _run(args: argparse.Namespace, engine: str) -> int:
         command="uv run python scripts/run_long_session.py --engine "
         + engine
         + (f" --out {args.out}" if args.out else "")
-        + (f" --extra-src {args.extra_src}" if args.extra_src else ""),
+        + (f" --extra-src {args.extra_src}" if args.extra_src else "")
+        + (f" --now {args.now}" if args.now else ""),
         started_at=started_at,
-        finished_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+        finished_at=base_now.isoformat(timespec="seconds"),
         env={
             "python": sys.version.split()[0],
             "database": None,
             "llm_model": None,
             "embedding_model": None,
             "rerank_model": None,
+            "prompt_version": prompt_version,
+            "eval_fixed_now": eval_fixed_now,
         },
         inputs={
             "suite_sha256": None,
@@ -317,6 +372,11 @@ def main() -> None:
     ap.add_argument("--out", default=None, help="输出 JSON 路径（默认 eval/report/longsession-<run_id>.json）")
     ap.add_argument("--extra-src", default=None, help="把旧版 src 插到 sys.path 最前（交叉校验用）")
     ap.add_argument("--rounds", type=int, default=100)
+    ap.add_argument(
+        "--now",
+        default=None,
+        help="冻结时钟（ISO 8601；等价设置 EVAL_FIXED_NOW）",
+    )
     args = ap.parse_args()
 
     # 导入 app 之前确定 sys.path：当前 src 在后，--extra-src 在最前（硬要求）
@@ -324,6 +384,13 @@ def main() -> None:
     sys.path.insert(0, str(ROOT / "eval"))
     if args.extra_src:
         sys.path.insert(0, str(Path(args.extra_src).resolve()))
+
+    if args.now:
+        # 先校验（非法值直接报错，不静默回退），再交给 clock 的统一入口
+        from datetime import datetime as _datetime
+
+        _datetime.fromisoformat(args.now.replace("Z", "+00:00"))
+        os.environ["EVAL_FIXED_NOW"] = args.now
 
     import asyncio
 

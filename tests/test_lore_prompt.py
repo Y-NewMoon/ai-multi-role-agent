@@ -6,6 +6,8 @@
 - retrieve_lore 节点：retriever 为空 / 关闭 → 空列表且不访问数据库。
 """
 
+from datetime import datetime
+
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.memory import InMemoryStore
@@ -13,6 +15,7 @@ from langgraph.store.memory import InMemoryStore
 from app.agents.graph import build_graph
 from app.agents.nodes.compose_prompt import (
     LORE_HEADER,
+    TZ,
     _estimate_tokens,
     _item_tokens,
     compose_prompt,
@@ -21,12 +24,18 @@ from app.agents.nodes.retrieve_lore import retrieve_lore
 from app.lore.retriever import LoreHit, RetrievalResult
 from app.memory.store import MemoryStore
 
-# —— V2.0（0a3938c）在 recalled_lore 为空时的固定输出：逐字快照 ——
+# —— 固定时钟（V3 M1：时间块可注入；带 now 的断言与真实时间无关）——
+_FIXED_NOW = datetime(2026, 10, 24, 22, 31, tzinfo=TZ)
+
+# —— V2.0（0a3938c）快照 + V3 M1 时间块：逐字快照 ——
 _V20_SNAPSHOT = [
     {
         "role": "system",
         "content": (
             "你是「一盏春」茶馆的老板，说话慢条斯理。\n\n"
+            "【当前时间】\n"
+            "现在是 2026-10-24 22:31（Asia/Shanghai，周六）。\n"
+            "用户说「今晚8点35」「明天早上7点」这类相对时间时，先按此换算成绝对时间。\n\n"
             "【本会话摘要】\n前情提要：这位客人上周来过一次，聊起了茶价。\n\n"
             "【你记得的相关信息】\n- 客人偏爱茉莉花茶\n- 祖父留下的老匾还在墙上"
         ),
@@ -65,7 +74,9 @@ def _item(ref: str, header: str, content: str, score: float, routes=("vector",))
 
 
 async def test_no_lore_matches_v20_snapshot():
-    out = await compose_prompt(_base_state(), token_budget=8000, recent_rounds=10)
+    out = await compose_prompt(
+        _base_state(), token_budget=8000, recent_rounds=10, now=_FIXED_NOW
+    )
     assert out["prompt"] == _V20_SNAPSHOT
     assert LORE_HEADER not in out["prompt"][0]["content"]
 
@@ -73,7 +84,9 @@ async def test_no_lore_matches_v20_snapshot():
 async def test_missing_lore_key_also_matches_v20_snapshot():
     state = _base_state()
     del state["recalled_lore"]
-    out = await compose_prompt(state, token_budget=8000, recent_rounds=10)
+    out = await compose_prompt(
+        state, token_budget=8000, recent_rounds=10, now=_FIXED_NOW
+    )
     assert out["prompt"] == _V20_SNAPSHOT
 
 
@@ -149,9 +162,9 @@ async def test_global_trim_drops_always_on_first():
         "recalled_lore": lore,
     }
     # 抬高端配额上限，隔离出「全局超预算」这条路径；
-    # 预算 60 只够去掉 lore 后的其余段落，故 ② 摘要 / ③ 记忆都不该被丢
+    # 预算 90 扣掉常驻时间块后只够去掉 lore 的其余段落，故 ② 摘要 / ③ 记忆都不该被丢
     out = await compose_prompt(
-        state, token_budget=60, lore_max_ratio=10.0, lore_always_on_ratio=10.0
+        state, token_budget=90, lore_max_ratio=10.0, lore_always_on_ratio=10.0
     )
     text = out["prompt"][0]["content"]
     assert "很长的常驻设定" not in text  # ① always-on 先丢
@@ -169,13 +182,13 @@ async def test_global_trim_order_summary_then_memories_then_lore():
         "recalled_lore": lore,
     }
     out = await compose_prompt(
-        state, token_budget=90, lore_max_ratio=10.0, lore_always_on_ratio=10.0
+        state, token_budget=140, lore_max_ratio=10.0, lore_always_on_ratio=10.0
     )
     text = out["prompt"][0]["content"]
     assert "【本会话摘要】" not in text  # ② 先丢摘要
     assert "【你记得的相关信息】" not in text  # ③ 再丢记忆
     assert "（设）设定" in text  # ④ lore 尚未被丢
-    assert _estimate_tokens(text) <= 90
+    assert _estimate_tokens(text) <= 140
 
 
 async def test_global_trim_drops_lore_before_rounds():

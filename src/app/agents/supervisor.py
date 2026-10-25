@@ -29,6 +29,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents.nodes.generate import normalize_thinkings
+from app.core import clock
 from app.llm.base import LLMProvider
 from app.observability.trace import (
     current_error,
@@ -182,8 +183,15 @@ class Supervisor:
         group_session_id: int,
         user_message: str,
         transcript: list[tuple[GroupMember, list[str]]],
+        *,
+        last_user_at: str | None = None,
     ) -> dict:
-        messages: list[Any] = [HumanMessage(content=user_message)]
+        # V3 M1：群聊用户消息同样带 at；last_user_at 为上一条用户发言时间
+        messages: list[Any] = [
+            HumanMessage(
+                content=user_message, additional_kwargs={"at": clock.now_iso()}
+            )
+        ]
         for m, parts in transcript:
             # system 而非 assistant：他人发言是"场景信息"，不是本角色说过的话。
             messages.extend(SystemMessage(content=f"【{m.name}】{p}") for p in parts)
@@ -194,6 +202,7 @@ class Supervisor:
             "agent_name": member.name,
             "persona_prompt": member.persona_prompt,
             "background": member.background,
+            "last_user_at": last_user_at or "",
             "idle_scope": "",  # 显式置空，避免上一次闲聊残留标记污染正常轮
             "reply_max_messages": 0,  # 正常轮用图默认上限
             "allowed_skills": list(member.allowed_skills),  # V2.2 工具白名单（契约 §2.4）
@@ -209,6 +218,8 @@ class Supervisor:
         group_session_id: int,
         transcript: list[tuple[GroupMember, list[str]]],
         reply_max_messages: int,
+        *,
+        last_user_at: str | None = None,
     ) -> dict:
         """自主闲聊的图状态输入：无用户消息，本轮他人闲聊以带 idle 标记的 SystemMessage 注入。"""
         messages: list[Any] = []
@@ -224,6 +235,7 @@ class Supervisor:
             "agent_name": member.name,
             "persona_prompt": member.persona_prompt,
             "background": member.background,
+            "last_user_at": last_user_at or "",
             "idle_scope": "group",
             "reply_max_messages": reply_max_messages,
             "allowed_skills": list(member.allowed_skills),  # V2.2 工具白名单（契约 §2.4）
@@ -240,6 +252,7 @@ class Supervisor:
         user_message: str,
         parent_trace_id: str | None = None,
         turn: int | None = None,
+        last_user_at: str | None = None,
     ) -> AsyncIterator[tuple[str, dict]]:
         """产出一轮的事件：`speaker` → (`token` / `message_break`)* → `turn_done`（每个发言人一组）。
 
@@ -325,7 +338,13 @@ class Supervisor:
                     graph = self._graph(nxt)
                     self._reset_tools()  # 每个角色每轮独立请求作用域
                     async for mode, chunk in graph.astream(
-                        self._state_in(member, group_session_id, user_message, transcript),
+                        self._state_in(
+                            member,
+                            group_session_id,
+                            user_message,
+                            transcript,
+                            last_user_at=last_user_at,
+                        ),
                         config={"configurable": {"thread_id": f"g{group_session_id}:{nxt}"}},
                         stream_mode=["custom", "values"],
                     ):
@@ -402,6 +421,7 @@ class Supervisor:
         turn_max_messages: int = 2,
         rotate_after: int | None = None,
         parent_trace_id: str | None = None,
+        last_user_at: str | None = None,
     ) -> AsyncIterator[tuple[str, dict]]:
         """产出一轮自主闲聊的事件：`speaker` → (`token` / `message_break`)* → `turn_done`。
 
@@ -434,7 +454,13 @@ class Supervisor:
                 graph = self._graph(agent_id)
                 self._reset_tools()  # 每个角色每轮独立请求作用域
                 async for mode, chunk in graph.astream(
-                    self._idle_state_in(member, group_session_id, transcript, turn_max_messages),
+                    self._idle_state_in(
+                        member,
+                        group_session_id,
+                        transcript,
+                        turn_max_messages,
+                        last_user_at=last_user_at,
+                    ),
                     config={"configurable": {"thread_id": f"g{group_session_id}:{agent_id}"}},
                     stream_mode=["custom", "values"],
                 ):

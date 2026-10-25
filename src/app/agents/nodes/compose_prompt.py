@@ -9,12 +9,12 @@ V2.3（契约 §2.8）新增三段：profile（常驻）、facts、L2；均为�
 → ④ L2 → ⑤ profile → ⑥ 检索 lore → ⑦ 近 N 轮。
 """
 
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta
 
 from langchain_core.messages import BaseMessage
 
 from app.agents.state import RolePlayState
+from app.core import clock
 from app.memory.facts import render_facts
 from app.memory.profile import render_profile
 from app.observability.trace import current_trace
@@ -23,7 +23,7 @@ from app.skills.registry import SkillRegistry
 
 _ROLE_MAP = {"system": "system", "human": "user", "ai": "assistant"}
 
-TZ = ZoneInfo("Asia/Shanghai")
+TZ = clock.TZ
 
 LORE_HEADER = "【设定资料】"
 # V2.2：工具白名单段（只放 name + when_to_use，不放 JSON Schema，契约 §2.4/§2.7）
@@ -34,11 +34,35 @@ TIME_HEADER = "【当前时间】"
 L2_HEADER = "【你和这位客人的过往】"
 
 
+def _parse_at(value: object) -> datetime | None:
+    """解析消息上的 `at`（ISO 8601）；缺失/非法返回 None（旧消息不加前缀）。"""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=TZ)
+    return moment.astimezone(TZ)
+
+
 def _to_chat_messages(messages: list[BaseMessage]) -> list[dict]:
     out: list[dict] = []
+    prev_at: datetime | None = None
     for m in messages:
         role = _ROLE_MAP.get(getattr(m, "type", "human"), "user")
-        out.append({"role": role, "content": str(m.content)})
+        content = str(m.content)
+        at = _parse_at((getattr(m, "additional_kwargs", None) or {}).get("at"))
+        prefix = ""
+        if at is not None:
+            # 首条 / 跨天 / 与上一条带 at 的消息间隔 >2h → 带日期；否则只带时分
+            if prev_at is None or at.date() != prev_at.date() or at - prev_at > timedelta(hours=2):
+                prefix = at.strftime("[%m-%d %H:%M] ")
+            else:
+                prefix = at.strftime("[%H:%M] ")
+            prev_at = at
+        out.append({"role": role, "content": prefix + content})
     return out
 
 
@@ -73,17 +97,20 @@ def _build_system(
     memories: list[str],
     lore_block: str = "",
     tools_block: str = "",
-    now_block: str = "",
+    time_block: str = "",
     profile_block: str = "",
     facts_block: str = "",
     l2_block: str = "",
 ) -> str:
-    """把 persona 基座与（可选的）档案/设定资料/摘要/记忆/事实/L2/工具清单拼成 system 文本。
+    """把 persona 基座与（可选的）时间/档案/设定资料/摘要/记忆/事实/L2/工具清单拼成 system 文本。
 
     所有可选段均为空时与 V2.0/V2.1/V2.2 输出逐字一致（契约 §1.3-6）。
     新三段顺序固定：profile 在摘要之前；facts 紧随召回记忆；L2 在 facts 之后。
+    V3 M1：时间块紧随 base（base 含闲聊指令时也一样），与 base 同级常驻、不参与裁剪。
     """
     parts = [base]
+    if time_block:
+        parts.append(time_block)
     if lore_block:
         parts.append(lore_block)
     if profile_block:
@@ -99,19 +126,39 @@ def _build_system(
         parts.append(l2_block)
     if tools_block:
         parts.append(tools_block)
-    if now_block:
-        parts.append(now_block)
     return "\n\n".join(p for p in parts if p)
 
 
-def _now_block(now: datetime) -> str:
-    """给启用工具的角色一个绝对时间锚点（仅在工具有效时插入）。"""
+def _interval_line(now: datetime, last_user_at: str | None) -> str:
+    """“你们上次说话是……”一行（§2.2 四档）；无/非法/晚于 now 时返回空串。"""
+    at = _parse_at(last_user_at)
+    if at is None or at > now:
+        return ""
+    delta = now - at
+    if delta < timedelta(minutes=10):
+        return ""
+    if delta < timedelta(hours=1):
+        return f"你们上次说话是 {int(delta.total_seconds() // 60)} 分钟前。"
+    days = (now.date() - at.date()).days
+    if days == 0:
+        return "你们上次说话是今天早些时候。"
+    if days == 1:
+        return "你们上次说话是昨天。"
+    return f"你们上次说话是 {days} 天前，隔了挺久。"
+
+
+def _now_block(now: datetime, last_user_at: str | None = None) -> str:
+    """所有角色常驻的时间锚点：固定 3 行 + 可选间隔行。"""
     weekday = "一二三四五六日"[now.weekday()]
-    return (
-        f"{TIME_HEADER}\n"
-        f"现在是 {now.strftime('%Y-%m-%d %H:%M')}（Asia/Shanghai，周{weekday}）。"
-        "用户说「今晚8点35」「明天早上7点」这类相对时间时，先按此换算成绝对时间。"
-    )
+    lines = [
+        TIME_HEADER,
+        f"现在是 {now.strftime('%Y-%m-%d %H:%M')}（Asia/Shanghai，周{weekday}）。",
+        "用户说「今晚8点35」「明天早上7点」这类相对时间时，先按此换算成绝对时间。",
+    ]
+    interval = _interval_line(now, last_user_at)
+    if interval:
+        lines.append(interval)
+    return "\n".join(lines)
 
 
 def _tools_block(registry: SkillRegistry | None, allowed: list[str]) -> str:
@@ -202,8 +249,9 @@ async def compose_prompt(
     # 白名单：优先取状态（服务层按角色注入），否则回落到图构造时的默认（契约 §2.4）
     allowed = list(state.get("allowed_skills") or allowed_skills or [])
     tools_block = _tools_block(skill_registry, allowed)
-    # 时间锚点可注入（V3 M1 前先把不可复现的 datetime.now 收口成参数）
-    now_block = _now_block(now or datetime.now(TZ)) if tools_block else ""
+    # V3 M1：时间块对所有角色常驻（不依赖 tools_block），一次调用只取一次时间
+    current = now or clock.now()
+    time_block = _now_block(current, state.get("last_user_at") or None)
 
     # 自主闲聊：临时把"主动开口"指引拼到 system 末尾（不改人设基座，不影响正常轮）
     idle_scope = state.get("idle_scope") or ""
@@ -214,15 +262,15 @@ async def compose_prompt(
 
     def _system() -> str:
         return _build_system(
-            base,
-            summary,
-            memories,
-            _lore_block(lore),
-            tools_block,
-            now_block,
-            profile_block,
-            facts_block,
-            l2_block,
+            base=base,
+            summary=summary,
+            memories=memories,
+            lore_block=_lore_block(lore),
+            tools_block=tools_block,
+            time_block=time_block,
+            profile_block=profile_block,
+            facts_block=facts_block,
+            l2_block=l2_block,
         )
 
     def _total() -> int:

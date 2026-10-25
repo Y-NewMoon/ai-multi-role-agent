@@ -7,6 +7,7 @@ SSE 流式下 `done` 事件必须在快照落库之后才推送。
 """
 
 import asyncio
+import logging
 import time
 import uuid
 from collections import OrderedDict
@@ -24,6 +25,7 @@ from app.agents.thread_state import (
     thread_message_contents,
 )
 from app.config import get_settings
+from app.core import clock
 from app.core.errors import AppError, NotFoundError
 from app.core.locks import KeyedLockPool
 from app.db.models import Agent, Message
@@ -36,6 +38,8 @@ from app.observability.trace import (
     start_trace,
 )
 from app.schemas.chat import ChatResponse
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -165,7 +169,13 @@ class ChatService:
             )
 
     @staticmethod
-    def _state_in(context: ChatContext, message: str, *, message_id: str | None = None) -> dict:
+    def _state_in(
+        context: ChatContext,
+        message: str,
+        *,
+        message_id: str | None = None,
+        last_user_at: str | None = None,
+    ) -> dict:
         """把预取的人设 + 本轮用户消息注入图状态（图内只读状态）。
 
         `idle_scope` 每次显式置空：状态被 checkpointer 持久化，若不重置，
@@ -173,14 +183,24 @@ class ChatService:
 
         `message_id` 显式预置到 HumanMessage 上：流式请求中途失败时可凭此 id
         精确回滚本轮用户消息，避免在工作记忆里留下「界面不可见却影响后续每轮」的孤儿消息。
+
+        V3 M1：本轮用户消息带 `at`（ISO 8601 带 +08:00），供 prompt 渲染时间前缀；
+        `last_user_at` 为上一条 user 消息时间，供“你们上次说话是 …”一行。
         """
         return {
-            "messages": [HumanMessage(content=message, id=message_id or str(uuid.uuid4()))],
+            "messages": [
+                HumanMessage(
+                    content=message,
+                    id=message_id or str(uuid.uuid4()),
+                    additional_kwargs={"at": clock.now_iso()},
+                )
+            ],
             "agent_id": context.agent_id,
             "session_id": context.session_id,
             "agent_name": context.agent_name,
             "persona_prompt": context.persona_prompt,
             "background": context.background,
+            "last_user_at": last_user_at or "",
             "idle_scope": "",
             "reply_max_messages": 0,
             "allowed_skills": list(context.allowed_skills),
@@ -193,8 +213,11 @@ class ChatService:
         }
 
     @staticmethod
-    def _idle_state_in(context: ChatContext) -> dict:
-        """自主闲聊的图状态输入：不注入用户消息，仅置 idle_scope=private。"""
+    def _idle_state_in(context: ChatContext, *, last_user_at: str | None = None) -> dict:
+        """自主闲聊的图状态输入：不注入用户消息，仅置 idle_scope=private。
+
+        V3 M1：闲聊轮没有用户消息（不加 `at`），但同样要传 `last_user_at`。
+        """
         return {
             "messages": [],
             "agent_id": context.agent_id,
@@ -202,6 +225,7 @@ class ChatService:
             "agent_name": context.agent_name,
             "persona_prompt": context.persona_prompt,
             "background": context.background,
+            "last_user_at": last_user_at or "",
             "idle_scope": "private",
             "reply_max_messages": 0,  # 私聊闲聊用图默认上限（reply_max_messages=3）
             "allowed_skills": list(context.allowed_skills),
@@ -261,6 +285,31 @@ class ChatService:
                 await db.refresh(row)
             return [row.id for row in rows]
 
+    async def _last_user_at(self, session_id: int) -> str | None:
+        """上一条 user 消息的落库时间（ISO 8601 带 +08:00）；查不到/失败返回 None。
+
+        V3 M1 D10：每轮一次索引友好的 SELECT；失败只 warning，不阻断本轮。
+        查询发生在图启动前，此时上一轮快照已落库（私聊快照在 graph 结束后写）。
+        """
+        try:
+            async with self._session_factory() as db:
+                created = (
+                    await db.execute(
+                        select(Message.created_at)
+                        .where(Message.session_id == session_id, Message.role == "user")
+                        .order_by(Message.id.desc())
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+        except Exception as exc:  # noqa: BLE001 - 时间感是增强项，不能成为可用性风险
+            logger.warning("取 last_user_at 失败（session=%s）：%s", session_id, exc)
+            return None
+        if created is None:
+            return None
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=clock.TZ)
+        return created.astimezone(clock.TZ).isoformat(timespec="seconds")
+
     async def _next_turn(self, session_id: int) -> int | None:
         """该会话的用户消息序号（1-based）；取不到时为 None（不伪造）。"""
         try:
@@ -295,6 +344,7 @@ class ChatService:
             cached = self._idempotent_lookup(session_id, client_msg_id)
             if cached is not None:
                 return cached
+            last_user_at = await self._last_user_at(context.session_id)
             recorder, token = start_trace(
                 mode="private",
                 session_id=context.session_id,
@@ -304,7 +354,7 @@ class ChatService:
             try:
                 self._reset_tools()
                 result = await self._graph.ainvoke(
-                    self._state_in(context, message),
+                    self._state_in(context, message, last_user_at=last_user_at),
                     config={"configurable": {"thread_id": context.thread_id}},
                 )
                 replies = [str(r) for r in (result.get("replies") or [])] or [
@@ -353,6 +403,7 @@ class ChatService:
         # R6：turn 在会话锁内计算（上一轮快照已落库），同会话并发才不会取到同一序号。
         finished = False
         async with self._locks.acquire(context.thread_id):
+            last_user_at = await self._last_user_at(context.session_id)
             recorder, token = start_trace(
                 mode="private",
                 session_id=context.session_id,
@@ -364,7 +415,12 @@ class ChatService:
                 try:
                     self._reset_tools()
                     async for mode, chunk in self._graph.astream(
-                        self._state_in(context, message, message_id=input_message_id),
+                        self._state_in(
+                            context,
+                            message,
+                            message_id=input_message_id,
+                            last_user_at=last_user_at,
+                        ),
                         config={"configurable": {"thread_id": context.thread_id}},
                         stream_mode=["custom", "values"],
                     ):
@@ -462,9 +518,10 @@ class ChatService:
         finished = False
         try:
             async with self._locks.acquire(context.thread_id):
+                last_user_at = await self._last_user_at(context.session_id)
                 self._reset_tools()
                 async for mode, chunk in self._graph.astream(
-                    self._idle_state_in(context),
+                    self._idle_state_in(context, last_user_at=last_user_at),
                     config={"configurable": {"thread_id": context.thread_id}},
                     stream_mode=["custom", "values"],
                 ):

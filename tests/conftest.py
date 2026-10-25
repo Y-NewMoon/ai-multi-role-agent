@@ -17,6 +17,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
 from app.config import get_settings
+from app.core.clock import ENV_KEY
 from app.db.base import create_engine, create_session_factory
 from app.observability.trace import configure_trace_store
 
@@ -35,6 +36,17 @@ def _isolate_trace_store():
     configure_trace_store(None)
     yield
     configure_trace_store(None)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_fixed_now(monkeypatch):
+    """V3 M1：每个测试前删除 `EVAL_FIXED_NOW`，结束后由 monkeypatch 恢复。
+
+    避免开发机/CI 的 shell 环境把整个测试套件冻在同一时刻；
+    需要固定时钟的用例显式传 `now=` 或自行 `monkeypatch.setenv`。
+    """
+    monkeypatch.delenv(ENV_KEY, raising=False)
+    yield
 
 
 def pytest_asyncio_loop_factories(config, item):
