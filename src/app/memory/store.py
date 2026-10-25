@@ -445,13 +445,37 @@ class MemoryStore:
             {"kind": "l2_counter", "merges": 0, "updated_at": utc_now_iso()},
         )
 
-    async def delete(self, agent_id: int | str, content: str) -> None:
+    async def delete(self, agent_id: int | str, content: str) -> bool:
         """按内容精确删除一条语义记忆（撤回消息时用；不影响该角色其余记忆）。
 
         key 由 (agent_id, content) 决定，故只删属于该内容的条目。
+        M2：返回是否真的存在并删除（既有调用方忽略返回值，语义不变）。
         """
         ns = memory_namespace(agent_id)
-        await self._store.adelete(ns, _memory_key(agent_id, content))
+        key = _memory_key(agent_id, content)
+        item = await self._store.aget(ns, key)
+        if item is None:
+            return False
+        await self._store.adelete(ns, key)
+        return True
+
+    async def count_entries(self, agent_id: int | str, *, page_size: int = 1000) -> int:
+        """统计该 agent namespace 的全部条目数（分页 `asearch`，不受单次 1000 封顶）。
+
+        `stats()` 的 `namespace_entries` 用单次 `asearch(limit=1000)` 封顶，
+        M2 `GET /memory/state` 需要真实总数，故单独分页统计。
+        """
+        ns = memory_namespace(agent_id)
+        size = max(1, int(page_size))
+        total = 0
+        offset = 0
+        while True:
+            items = await self._store.asearch(ns, limit=size, offset=offset)
+            if not items:
+                break
+            total += len(items)
+            offset += len(items)
+        return total
 
     async def delete_all(self, agent_id: int | str) -> None:
         """清空该角色的整个 namespace（语义记忆 + 全部会话摘要）。

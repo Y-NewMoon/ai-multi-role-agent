@@ -9,6 +9,7 @@ V2.3（§2.9）：`memory_extract_enabled` 为真时额外取 profile / current_
 """
 
 import logging
+from datetime import datetime
 
 from langchain_core.messages import HumanMessage
 
@@ -44,14 +45,18 @@ async def retrieve_memory(
     w_importance: float = 0.15,
     halflife_days: float = 14.0,
     overscan: int = 50,
+    now: datetime | None = None,
+    debug: bool = False,
 ) -> dict:
+    """召回记忆；`now`/`debug` 为 M2 加性参数，图内调用不传，行为与 M1 一致。"""
     messages = state.get("messages", [])
     query = _latest_user_query(messages)
     agent_id = state["agent_id"]
 
     result: dict = {}
+    debug_out: dict | None = {"pool": 0, "top": []} if debug else None
     if extract_enabled:
-        result["recalled_memories"] = await retrieve_weighted(
+        recalled = await retrieve_weighted(
             memory_store,
             agent_id,
             query=query,
@@ -61,7 +66,10 @@ async def retrieve_memory(
             w_recency=w_recency if weighted else 0.0,
             w_importance=w_importance if weighted else 0.0,
             halflife_days=halflife_days,
+            now=now,
+            debug_out=debug_out,
         )
+        result["recalled_memories"] = recalled
         result["recalled_facts"] = await memory_store.current_facts(agent_id, limit=8)
         result["user_profile"] = (
             await memory_store.get_profile(agent_id) if profile_enabled else {}
@@ -71,6 +79,8 @@ async def retrieve_memory(
         result["recalled_memories"] = await retrieve(memory_store, agent_id, query=query, limit=limit)
 
     result["summary"] = await memory_store.get_summary(agent_id, state["session_id"])
+    if debug:
+        result["recalled_debug"] = debug_out or {"pool": 0, "top": []}
     # V2.4：只记录召回条数；lore 由 retrieve_lore 补全
     recorder = current_trace()
     if recorder is not None:

@@ -32,6 +32,8 @@ from app.observability.trace import TraceStore, configure_trace_store
 from app.services.agent_service import AgentService
 from app.services.chat_service import ChatService
 from app.services.group_service import GroupService
+from app.services.memory_api_buffer import MemoryApiBuffer
+from app.services.memory_api_service import MemoryApiService
 from app.services.reminder_service import ReminderService
 from app.services.session_service import SessionService
 from app.skills.builtin import build_default_registry
@@ -218,6 +220,24 @@ async def lifespan(app: FastAPI):
     # V2.2：工具注册表（agents API 白名单校验用）与提醒服务（HITL API）
     app.state.skill_registry = skill_registry
     app.state.reminder_service = ReminderService(session_factory=session_factory)
+
+    # V3 M2：本机记忆接口（4 端点）；缓冲从磁盘恢复，坏文件由 buffer 自行隔离
+    memory_api_buffer = MemoryApiBuffer(
+        settings.memory_api_buffer_path,
+        max_messages=settings.memory_api_buffer_max_messages,
+    )
+    await memory_api_buffer.load()
+    if not settings.memory_api_agent_set:
+        logging.getLogger(__name__).warning(
+            "MEMORY_API_AGENTS 为空：所有 /api/v1/memory/* 请求将返回 403"
+        )
+    app.state.memory_api_buffer = memory_api_buffer
+    app.state.memory_api_service = MemoryApiService(
+        memory_store=memory_store,
+        llm=llm,
+        buffer=memory_api_buffer,
+        settings=settings,
+    )
 
     yield
 

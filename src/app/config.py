@@ -125,6 +125,15 @@ class Settings(BaseSettings):
     chat_idempotency_ttl_s: int = 600
     chat_idempotency_max_entries: int = 1024
 
+    # ===== 本机记忆接口（V3 M2）=====
+    memory_api_agents: str = "ext"  # 逗号分隔白名单；纯数字 agent 一律拒绝
+    memory_api_buffer_path: str = "data/memory_api/buffer.json"
+    memory_api_buffer_max_messages: int = 200
+    memory_api_idempotency_ttl_s: int = 600
+    memory_api_idempotency_max_entries: int = 512
+    memory_api_max_text_chars: int = 8000
+    memory_api_max_replies: int = 20
+
     # ===== 压测（V2.4 · 仅 fake）=====
     fake_llm_delay_ms: int = 10
     fake_llm_reply: str = "（压测假回复）"
@@ -189,6 +198,20 @@ class Settings(BaseSettings):
     @property
     def sqlalchemy_url(self) -> str:
         return self._to_psycopg(self.database_url)
+
+    @property
+    def memory_api_agent_set(self) -> frozenset[str]:
+        """M2：`MEMORY_API_AGENTS` 解析为白名单集合。
+
+        逗号分隔、strip、去空；**纯数字一律剔除**（会与角色 `agent:1` namespace 撞车）。
+        空白名单 → 空集合（所有 agent 403，启动时 warning）。
+        """
+        out: set[str] = set()
+        for part in str(self.memory_api_agents or "").split(","):
+            name = part.strip()
+            if name and not name.isdigit():
+                out.add(name)
+        return frozenset(out)
 
     @property
     def test_sqlalchemy_url(self) -> str:

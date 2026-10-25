@@ -75,6 +75,7 @@ async def retrieve_weighted(
     w_importance: float = 0.15,
     halflife_days: float = 14.0,
     now: datetime | None = None,
+    debug_out: dict | None = None,
 ) -> list[str]:
     """加权召回：`0.6*cos + 0.25*recency + 0.15*importance`。
 
@@ -82,8 +83,12 @@ async def retrieve_weighted(
     - 排序：score 降序 → updated_at 降序 → key 升序（确定性）；
     - `query is None` → 退化为 `current_facts` + 最近记忆（不含加权）；
     - `memory_weighted_recall=false` 时调用方传 `w_cosine=1`、其余 0，标注规则不变。
+    - `debug_out`（M2）：查询非空时填 `{"pool": 候选数, "top": 前 5 条加权}`；
+      `query is None` 时填 `{"pool": 0, "top": []}`；默认 None 不产生任何额外行为。
     """
     if query is None:
+        if debug_out is not None:
+            debug_out.update({"pool": 0, "top": []})
         facts = await memory_store.current_facts(agent_id, limit=limit)
         out = [str(f.get("text") or "") for f in facts if f.get("text")]
         for text in await memory_store.search(agent_id, query=None, limit=limit):
@@ -106,6 +111,23 @@ async def retrieve_weighted(
     scored.sort(key=lambda pair: str(pair[1].get("key") or ""))
     scored.sort(key=lambda pair: str(pair[1].get("updated_at") or ""), reverse=True)
     scored.sort(key=lambda pair: -pair[0])
+
+    if debug_out is not None:
+        debug_out.update(
+            {
+                "pool": len(candidates),
+                "top": [
+                    {
+                        "text": str(item.get("text") or ""),
+                        "role": item.get("role"),
+                        "score": round(score, 6),
+                        "importance": float(item.get("importance", 0.5)),
+                        "updated_at": item.get("updated_at"),
+                    }
+                    for score, item in scored[:5]
+                ],
+            }
+        )
 
     return [
         _label(str(item.get("text") or ""), item.get("role"))

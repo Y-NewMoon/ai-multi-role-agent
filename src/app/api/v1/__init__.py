@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1 import agents, chat, group, lore, reminders, sessions, uploads
+from app.api.v1 import agents, chat, group, lore, memory, reminders, sessions, uploads
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(chat.router)
@@ -12,3 +12,4 @@ api_router.include_router(group.router)
 api_router.include_router(uploads.router)
 api_router.include_router(lore.router)
 api_router.include_router(reminders.router)
+api_router.include_router(memory.router)

@@ -165,6 +165,13 @@ npm run dev                                # http://localhost:5173
 | `REMINDER_PENDING_TTL_HOURS` | `24` | pending 提醒的惰性过期小时数（≤0 按 24 并 warning） |
 | `CHAT_IDEMPOTENCY_TTL_S` | `600` | 非流式 `/chat` 幂等缓存 TTL（单进程内存） |
 | `CHAT_IDEMPOTENCY_MAX_ENTRIES` | `1024` | 幂等缓存容量上限（LRU 淘汰） |
+| `MEMORY_API_AGENTS` | `ext` | 本机记忆接口的 agent 白名单（逗号分隔；纯数字一律拒绝） |
+| `MEMORY_API_BUFFER_PATH` | `data/memory_api/buffer.json` | 未摘要消息滚动缓冲文件（gitignored，不得提交） |
+| `MEMORY_API_BUFFER_MAX_MESSAGES` | `200` | 缓冲消息上限；超限返回 503 `buffer_overflow`（不静默删） |
+| `MEMORY_API_IDEMPOTENCY_TTL_S` | `600` | 记忆接口 turn 幂等缓存 TTL（单进程内存，重启失效） |
+| `MEMORY_API_IDEMPOTENCY_MAX_ENTRIES` | `512` | 记忆接口幂等缓存容量 |
+| `MEMORY_API_MAX_TEXT_CHARS` | `8000` | 单条 `user_text` / `replies[]` / `contents[]` 上限 |
+| `MEMORY_API_MAX_REPLIES` | `20` | 每轮最多角色回复条数 |
 | `FAKE_LLM_DELAY_MS` | `10` | fake provider 每段延迟（仅 `LLM_PROVIDER=fake`） |
 | `FAKE_LLM_REPLY` | `（压测假回复）` | fake provider 固定回复（仅压测） |
 
@@ -203,6 +210,10 @@ npm run dev                                # http://localhost:5173
 | GET | `/api/v1/reminders?agent_id=&session_id=` | 列出该会话的提醒（默认不含 `cancelled`） |
 | POST | `/api/v1/reminders/{reminder_id}/confirm` | 确认提醒：`pending` → `active`（幂等） |
 | DELETE | `/api/v1/reminders/{reminder_id}` | 取消提醒：`pending`/`active` → `cancelled`（幂等） |
+| POST | `/api/v1/memory/turn` | 本机记忆接口：追加一轮（用户 + 角色回复），触发记忆/抽取/摘要/L2 |
+| POST | `/api/v1/memory/context` | 本机记忆接口：按 `query` 读取 profile/facts/L2/summary/memories |
+| POST | `/api/v1/memory/forget` | 本机记忆接口：按内容删除语义记忆（不动 facts/profile/L2/summary） |
+| GET | `/api/v1/memory/state` | 本机记忆接口：条目/事实/档案/缓冲规模（`session` 可选） |
 
 ### SSE 协议（`POST /api/v1/chat/stream`）
 
@@ -337,6 +348,46 @@ V2.2 的记忆只有「语义记忆（向量召回）+ 会话滚动摘要」；V
 - **手动重合成**：`uv run python scripts/compact_memory.py --agent 1 [--force]`（`--force` 忽略计数阈值）。
 - **评测**：`eval/suites/memory.jsonl`（40 条）+ `scripts/run_memory_eval.py`（冲突 / 档案 / 召回五指标）与
   `scripts/run_long_session.py`（100 轮合成历史、**不调 LLM**，只比 token 与分段占比）；口径见 `eval/README.md`。
+
+### 本机记忆接口（V3 M2）
+
+给**同机外部进程**读写一份隔离记忆（`agent` / `session` 都是字符串，不建角色行、不建表）。
+只绑 `127.0.0.1`、不鉴权；`agent` 必须在 `MEMORY_API_AGENTS` 白名单里，纯数字一律拒绝。
+
+| 端点 | 作用 |
+| --- | --- |
+| `POST /api/v1/memory/turn` | 追加一轮（用户 + 每条角色回复），直接调 `update_memory`：写语义记忆 / 抽取 facts+profile / 滚动摘要 / L2 |
+| `POST /api/v1/memory/context` | 按 `query` 返回 `profile` / `facts` / `boundaries=[]` / `l2` / `memories` / `summary` / `debug` |
+| `POST /api/v1/memory/forget` | 按内容删除语义记忆，返回 `deleted` / `missing`（**不删** facts/profile/L2/summary） |
+| `GET /api/v1/memory/state` | 条目数（分页统计，不受 1000 封顶）/ 未失效事实 / profile 槽位 / L2 计数 / 缓冲规模 |
+
+- **滚动缓冲**：未摘要消息落在 `MEMORY_API_BUFFER_PATH`（单文件 JSON，原子写）；每条消息（含 AI 回复）都有 `id`，
+  摘要后按 `RemoveMessage.id` 真删；进程重启从文件恢复；同 `(agent, session)` 串行、单进程。
+- **错误信封**：仅 `/api/v1/memory/*` 使用 `{ok:false, contract:"1", error:{code,message}}`；既有 API 仍 `{detail}`。
+  错误码闭集：`invalid_request` / `agent_not_allowed` / `duplicate_message_id` / `buffer_overflow` /
+  `buffer_persist_failed` / `memory_write_failed` / `retrieval_failed` / `forget_failed` / `state_failed` / `internal_error`。
+- **不做什么**：不生成回复、不调 `compose_prompt`、不碰图 / checkpointer / persona / lore / tools；
+  `/memory/boundary` 随 M4；不做多实例（单文件缓冲会被互相覆盖）。
+
+```powershell
+# turn
+curl.exe -X POST http://127.0.0.1:8000/api/v1/memory/turn `
+  -H "Content-Type: application/json" `
+  -d '{"agent":"ext","session":"main","user_text":"今天有点累","replies":["那就早点休息。"],"at":"2026-10-25T10:35:00+08:00"}'
+
+# context
+curl.exe -X POST http://127.0.0.1:8000/api/v1/memory/context `
+  -H "Content-Type: application/json" `
+  -d '{"agent":"ext","session":"main","query":"用户喜欢什么茶"}'
+
+# forget
+curl.exe -X POST http://127.0.0.1:8000/api/v1/memory/forget `
+  -H "Content-Type: application/json" `
+  -d '{"agent":"ext","contents":["今天有点累"]}'
+
+# state
+curl.exe "http://127.0.0.1:8000/api/v1/memory/state?agent=ext&session=main"
+```
 
 ### 可观测与稳定性（V2.4）
 

@@ -6,6 +6,7 @@ from app.lore.service import LoreService
 from app.services.agent_service import AgentService
 from app.services.chat_service import ChatService
 from app.services.group_service import GroupService
+from app.services.memory_api_service import MemoryApiService
 from app.services.reminder_service import ReminderService
 from app.services.session_service import SessionService
 from app.skills.registry import SkillRegistry
@@ -33,6 +34,11 @@ def get_lore_service(request: Request) -> LoreService:
 
 def get_reminder_service(request: Request) -> ReminderService:
     return request.app.state.reminder_service
+
+
+def get_memory_api_service(request: Request) -> MemoryApiService:
+    """V3 M2：本机记忆接口服务（lifespan 装配）。"""
+    return request.app.state.memory_api_service
 
 
 def get_skill_registry(request: Request) -> SkillRegistry | None:
