@@ -19,11 +19,15 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
 TRACE_VERSION = "1.0"
 PROMPT_VERSION_DEFAULT = "v2.6"
+
+# 项目固定单一时区；trace 时间戳与按天文件名都以它为准，不读宿主时区。
+TZ = ZoneInfo("Asia/Shanghai")
 
 
 # ===== 全局 trace store（main 启动时注入；未注入时按 settings 惰性构造）=====
@@ -82,8 +86,13 @@ def current_error() -> dict | None:
 
 
 def _now() -> datetime:
-    """本地时区当前时间（Asia/Shanghai 部署下带 +08:00 偏移）。"""
-    return datetime.now().astimezone()
+    """墙钟当前时间，固定 `Asia/Shanghai`（+08:00）。
+
+    不能依赖宿主时区：CI（UTC）与部署机（+08:00）必须写出同一种偏移；
+    也不读 `EVAL_FIXED_NOW` 之类的业务冻结时钟，否则
+    `total_ms` / `finished_at` 不再反映真实耗时。
+    """
+    return datetime.now(TZ)
 
 
 _git_sha_cache: str | None = None
