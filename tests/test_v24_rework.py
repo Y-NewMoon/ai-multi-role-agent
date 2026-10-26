@@ -25,6 +25,7 @@ from app.lore.indexer import source_ref
 from app.memory.store import MemoryStore
 from app.observability.llm import InstrumentedLLM
 from app.observability.trace import (
+    TZ,
     TraceRecorder,
     TraceStore,
     configure_trace_store,
@@ -34,7 +35,9 @@ from app.observability.trace import (
 from app.services import chat_service as chat_service_module
 from app.services.chat_service import ChatContext, ChatService
 
-TODAY = datetime.now().astimezone().date().isoformat()
+# trace 文件名按 Asia/Shanghai 日期切分，这里必须同源取日期，
+# 否则 UTC 宿主（CI）的 16:00–24:00 窗口会去找“昨天”的文件。
+TODAY = datetime.now(TZ).date().isoformat()
 
 
 def _records(directory: Path) -> list[dict]:
