@@ -1,8 +1,21 @@
-# AI 多角色扮演智能体
+# 多会话 LLM 对话后端（AI 多角色扮演智能体）
 
-基于 **LangGraph** 的多角色扮演聊天后端：为每个角色维护长期记忆（语义 + 滚动摘要），
-按会话隔离对话历史，支持 **SSE 流式** 逐 token 输出。附一个 Vite + React 的最小前端
-（单人对话 / 群聊 / 角色管理）。
+基于 **LangGraph + FastAPI + PostgreSQL/pgvector** 的多会话对话后端：每个角色维护独立长期记忆
+（语义 / 事实 / 档案 / 层级摘要四层），按会话隔离对话历史，SSE 逐 token 流式输出；带世界书
+**三路召回 + RRF + 重排**、**Skill / MCP 工具层**、**评测闭环**与运行期 **trace**。
+附一个 Vite + React 的最小前端（单人对话 / 群聊 / 角色管理）。
+
+**关键指标**（每个数字都有 manifest：`git_sha` + 配置 + 输入输出哈希，见文末「效果与评测」）
+
+| 维度 | 现状 | 口径 |
+|---|---|---|
+| 自动化测试 | **591 collected**（49 条需真库的集成用例默认 skip） | `uv run pytest -q` |
+| 评测集 | **8 套 / 350 条**（golden 40 · scenario 80 · adversarial 40 · retrieval 60 · lore 40 · memory 40 · skill_use 30 · agentic_rag 20） | `eval/suites/` |
+| 检索质量 | hit@1 **0.85 → 0.90 → 0.975 → 1.00**（纯向量 → +关键词 → +重排 → +改写） | 40 条标注、2 篇文档 20 chunks |
+| 并发压测 | 20×20 / 400 请求，p95 首 token **1457ms**、**11.46 req/s**（fake LLM + 关世界书；真实 bge 路径 6118ms） | `eval/report/loadtest-20261022-r1b-clean` |
+
+> 口径与保留项（`hit@3` 饱和、adversarial 只跑 sample、真实 bge 未优化）一并写在
+> [效果与评测](#效果与评测数字--样本--口径--出处) 表后，不藏。
 
 ## 演示
 
@@ -400,6 +413,9 @@ curl.exe "http://127.0.0.1:8000/api/v1/memory/state?agent=ext&session=main"
 `started_at` / `finished_at` / `first_token_ms` / `total_ms` / `nodes[]` / `retrieval` / `tools[]` /
 `llm`（`model` / `calls` / `prompt_tokens` / `completion_tokens` / `cost_cny` / `usage_source`）/
 `budget` / `error` / `degraded`。
+
+- **时间戳口径**：`started_at` / `finished_at` 固定按 `Asia/Shanghai` 写（`+08:00`），
+  与宿主时区无关——CI（UTC）与部署机（`+08:00`）输出同一种偏移，按天分文件名也用同一时区。
 
 - **`retrieval.lore_ids` 口径**：元素是 chunk 的 `source_ref`，即 `"{slug}:{seq:02d}"`
   （如 `yunqi_tea:10`、`qingxi_town:05`），**不是**数字 `doc_id`；`slug` 为世界书文件名/文档 slug。
