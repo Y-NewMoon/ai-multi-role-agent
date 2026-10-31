@@ -506,6 +506,14 @@ def _emit(report: dict, *, args, provider: str, health: dict | None = None,
         health=health,
         session_ids=session_ids,
     )
+    # M0：manifest 自身也记本次 run 的核心指标，审查方无需跨文件拼口径
+    manifest["metrics"] = {
+        "requests": report["requests"],
+        "errors": report["errors"],
+        "p50_first_token_ms": report["p50_first_token_ms"],
+        "p95_first_token_ms": report["p95_first_token_ms"],
+        "throughput_req_s": report["throughput_req_s"],
+    }
     md_path, manifest_path = _write_outputs(
         out_path=args.out_path, report=report, manifest=manifest, skipped=False,
         cases=cases,
