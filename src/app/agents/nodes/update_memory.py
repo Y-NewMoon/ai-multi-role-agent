@@ -141,7 +141,7 @@ async def update_memory(
                 if profile_enabled and extraction.profile:
                     await update_profile(memory_store, agent_id, extraction.profile)
         except Exception as exc:  # noqa: BLE001 - 记忆是增强项，不能成为可用性风险（D8）
-            logger.warning("事实抽取/写入失败（agent=%s）：%s", agent_id, exc)
+            logger.exception("事实抽取/写入失败（agent=%s）：%s", agent_id, exc)
 
     # 3) 超阈值则滚动摘要：压缩最旧 chunk_rounds 轮，并裁剪工作记忆窗口
     #    fail-open（D8）：摘要链路任何一步失败（模型抖动、写库失败）都只记日志，
@@ -173,12 +173,12 @@ async def update_memory(
                     max_chars=l2_max_chars,
                 )
             except Exception as exc:  # noqa: BLE001 - L2 失败不得阻断回复（D8）
-                logger.warning("L2 重合成失败（agent=%s）：%s", agent_id, exc)
+                logger.exception("L2 重合成失败（agent=%s）：%s", agent_id, exc)
 
         removals = [RemoveMessage(id=m.id) for m in old_chunk if m.id]
         return {"messages": removals} if removals else {}
     except Exception as exc:  # noqa: BLE001 - 摘要失败不得阻断记忆写入（D8）
-        logger.warning(
+        logger.exception(
             "滚动摘要失败，本轮记忆已写入、缓冲不裁剪，下轮重试（agent=%s）：%s",
             agent_id,
             exc,
