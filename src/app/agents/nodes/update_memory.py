@@ -11,6 +11,7 @@ V2.3（§2.9）：
   ≥ `memory_extract_min_chars`，调 `extract` → `record_facts` + `update_profile`；
   任何异常只记 log（fail-open，D8）。
 - 滚动摘要**成功**后 L1 合并计数 +1；达到 `memory_l2_every_merges` 时重合成 L2。
+- 滚动摘要整条链路 fail-open：失败只记日志、缓冲不裁剪，下一轮重试。
 """
 
 import logging
@@ -115,8 +116,13 @@ async def update_memory(
         and replies
     ):
         try:
+            current_profile = await memory_store.get_profile(agent_id)
             extraction = await extract(
-                llm, user_text, "\n".join(replies), timeout_s=extract_timeout_s
+                llm,
+                user_text,
+                "\n".join(replies),
+                timeout_s=extract_timeout_s,
+                current_profile=current_profile,
             )
             if extraction is not None:
                 # 契约 §2.1/§2.9：私聊 s{session_id}:{轮次}，群聊 g{group_id}:{轮次}
@@ -138,32 +144,43 @@ async def update_memory(
             logger.warning("事实抽取/写入失败（agent=%s）：%s", agent_id, exc)
 
     # 3) 超阈值则滚动摘要：压缩最旧 chunk_rounds 轮，并裁剪工作记忆窗口
+    #    fail-open（D8）：摘要链路任何一步失败（模型抖动、写库失败）都只记日志，
+    #    本轮记忆照常保留，缓冲不裁剪，下一轮再试——否则一次失败会让 /memory/turn
+    #    永久 502（缓冲卡在阈值之上，每次重试都在同一处再炸一次）。
     if _round_count(messages) <= trigger_rounds:
         return {}
 
-    old_chunk = _old_rounds(messages, chunk_rounds)
-    # 阻止式：摘要输入剔除自主闲聊消息（闲聊永不被并入摘要），但裁剪窗口仍包含它们。
-    summarize_input = [m for m in old_chunk if not _is_idle_message(m)]
-    existing = await memory_store.get_summary(agent_id, session_id)
-    summary_text = await summarize(llm, summarize_input, existing_summary=existing)
-    if not summary_text:
+    try:
+        old_chunk = _old_rounds(messages, chunk_rounds)
+        # 阻止式：摘要输入剔除自主闲聊消息（闲聊永不被并入摘要），但裁剪窗口仍包含它们。
+        summarize_input = [m for m in old_chunk if not _is_idle_message(m)]
+        existing = await memory_store.get_summary(agent_id, session_id)
+        summary_text = await summarize(llm, summarize_input, existing_summary=existing)
+        if not summary_text:
+            return {}
+
+        await memory_store.put_summary(agent_id, session_id, summary_text)
+
+        # 4) V2.3：L1 滚动合并成功 → L2 计数 +1，达到阈值则重合成（失败不归零、不阻断）
+        if l2_enabled:
+            try:
+                await maybe_update_l2(
+                    memory_store,
+                    agent_id,
+                    llm,
+                    current_l1=summary_text,
+                    every_merges=l2_every_merges,
+                    max_chars=l2_max_chars,
+                )
+            except Exception as exc:  # noqa: BLE001 - L2 失败不得阻断回复（D8）
+                logger.warning("L2 重合成失败（agent=%s）：%s", agent_id, exc)
+
+        removals = [RemoveMessage(id=m.id) for m in old_chunk if m.id]
+        return {"messages": removals} if removals else {}
+    except Exception as exc:  # noqa: BLE001 - 摘要失败不得阻断记忆写入（D8）
+        logger.warning(
+            "滚动摘要失败，本轮记忆已写入、缓冲不裁剪，下轮重试（agent=%s）：%s",
+            agent_id,
+            exc,
+        )
         return {}
-
-    await memory_store.put_summary(agent_id, session_id, summary_text)
-
-    # 4) V2.3：L1 滚动合并成功 → L2 计数 +1，达到阈值则重合成（失败不归零、不阻断）
-    if l2_enabled:
-        try:
-            await maybe_update_l2(
-                memory_store,
-                agent_id,
-                llm,
-                current_l1=summary_text,
-                every_merges=l2_every_merges,
-                max_chars=l2_max_chars,
-            )
-        except Exception as exc:  # noqa: BLE001 - L2 失败不得阻断回复（D8）
-            logger.warning("L2 重合成失败（agent=%s）：%s", agent_id, exc)
-
-    removals = [RemoveMessage(id=m.id) for m in old_chunk if m.id]
-    return {"messages": removals} if removals else {}

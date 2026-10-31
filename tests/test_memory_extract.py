@@ -81,7 +81,7 @@ async def test_extract_输入超长截断到2000字():
     llm = FakeLLM([VALID])
     await extract(llm, "长" * 5000, "回" * 5000)
     user_prompt = llm.calls[0][-1]["content"]
-    conversation = user_prompt.split("对话：\n", 1)[1].split("\n\n输出格式", 1)[0]
+    conversation = user_prompt.split("对话：\n", 1)[1].split("\n\n当前档案", 1)[0]
     assert len(conversation) <= 2000
 
 
@@ -170,6 +170,51 @@ def test_parse_profile白名单与截断():
     assert result is not None
     assert set(result.profile) == {"称呼", "禁忌"}
     assert len(result.profile["称呼"]) == 40
+
+
+def test_parse_profile_在标点处截断不切半个引号():
+    long = "不要称呼角色为“宝宝”，她不喜欢被这么叫，也不要叫小肥鱼"
+    text = json.dumps({"facts": [], "profile": {"禁忌": long}}, ensure_ascii=False)
+    result = parse_extraction(text)
+    assert result is not None
+    value = result.profile["禁忌"]
+    assert len(value) <= 40
+    assert value.count("“") == value.count("”")
+
+
+def test_parse_profile_无标点补省略号():
+    text = json.dumps({"facts": [], "profile": {"称呼": "阿" * 60}}, ensure_ascii=False)
+    result = parse_extraction(text)
+    assert result is not None
+    value = result.profile["称呼"]
+    assert len(value) == 40
+    assert value.endswith("…")
+
+
+def test_parse_profile_空串表示撤销():
+    text = json.dumps({"facts": [], "profile": {"禁忌": ""}}, ensure_ascii=False)
+    result = parse_extraction(text)
+    assert result is not None
+    assert result.profile == {"禁忌": ""}
+
+
+def test_parse_profile_占位词也当撤销():
+    text = json.dumps({"facts": [], "profile": {"禁忌": "无"}}, ensure_ascii=False)
+    result = parse_extraction(text)
+    assert result is not None
+    assert result.profile == {"禁忌": ""}
+
+
+async def test_extract_把当前档案带进提示词():
+    llm = FakeLLM([json.dumps({"facts": [], "profile": {"禁忌": ""}}, ensure_ascii=False)])
+    result = await extract(
+        llm, "以后可以叫我宝宝了", "行吧", current_profile={"禁忌": "不要叫宝宝"}
+    )
+    assert result is not None
+    assert result.profile == {"禁忌": ""}
+    prompt = llm.calls[0][1]["content"]
+    assert "不要叫宝宝" in prompt
+    assert "空字符串" in prompt
 
 
 def test_parse_围栏与前后废话():

@@ -44,6 +44,42 @@ _PLACEHOLDER_OBJECTS = {
 }
 _EDGE_PUNCT = "，。！？；：、,.!?;: \t\r\n　\"'“”‘’（）()【】[]《》<>「」『』"
 
+# 超长画像值的收尾：优先断在标点，避免把引号/括号切成半个
+_PROFILE_CUT_MARKS = "，。；、！？,;!?"
+_PROFILE_PAIRS = {"“": "”", "「": "」", "『": "』", "（": "）", "(": ")", "《": "》"}
+_PROFILE_CLEAR_WORDS = {"", "无", "没有", "暂无", "不适用", "none", "null", "n/a"}
+
+
+def _balance_pairs(text: str) -> str:
+    """补齐落单的左引号/左括号（只补右半边，不改内容）。"""
+    for left, right in _PROFILE_PAIRS.items():
+        if text.count(left) > text.count(right):
+            text += right
+    return text
+
+
+def _truncate_profile(value: str, limit: int = MAX_PROFILE_VALUE_CHARS) -> str:
+    """画像值超长时：能在标点处断就断在标点，否则截断补省略号。
+
+    与旧实现（`[:40]` 硬切）的区别：不会出现 `不要称呼角色为“宝宝` 这种半个引号。
+    """
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return _balance_pairs(text)
+
+    head = text[:limit]
+    cut = max((head.rfind(ch) for ch in _PROFILE_CUT_MARKS), default=-1)
+    if cut >= max(6, limit // 4):
+        result = head[: cut + 1]
+    else:
+        result = head[: limit - 1].rstrip() + "…"
+
+    result = result.rstrip(_EDGE_PUNCT)
+    result = _balance_pairs(result)
+    if len(result) > limit:
+        result = head[: limit - 1].rstrip() + "…"
+    return result
+
 
 @dataclass(frozen=True)
 class ExtractedFact:
@@ -117,9 +153,9 @@ def _parse_profile(raw_profile: object) -> dict[str, str]:
     for slot in PROFILE_WHITELIST:
         if slot not in raw_profile:
             continue
-        value = _clean(raw_profile[slot])[:MAX_PROFILE_VALUE_CHARS]
-        if value:
-            out[slot] = value
+        value = _truncate_profile(_clean(raw_profile[slot]))
+        # 空串 / 占位词 = 明确撤销该槽位（update_profile 写空值会删掉旧档案）
+        out[slot] = "" if value.strip().lower() in _PROFILE_CLEAR_WORDS else value
     return out
 
 
@@ -148,14 +184,28 @@ async def extract(
     reply_text: str,
     *,
     timeout_s: float = 8.0,
+    current_profile: dict[str, str] | None = None,
 ) -> Extraction | None:
-    """抽不出/失败返回 None（fail-open）；成功但无事实返回 Extraction([], {})。"""
+    """抽不出/失败返回 None（fail-open）；成功但无事实返回 Extraction([], {})。
+
+    `current_profile`：把旧档案带进提示词，模型才能在"用户推翻了旧设定"时输出空串撤销它。
+    """
     conversation = f"用户：{user_text}\n角色：{reply_text}"
     if len(conversation) > MAX_INPUT_CHARS:
         conversation = conversation[:MAX_INPUT_CHARS]
+    profile_text = (
+        json.dumps(current_profile, ensure_ascii=False)
+        if current_profile
+        else "（无）"
+    )
     messages = [
         {"role": "system", "content": EXTRACT_SYSTEM_PROMPT},
-        {"role": "user", "content": EXTRACT_PROMPT.format(conversation=conversation)},
+        {
+            "role": "user",
+            "content": EXTRACT_PROMPT.format(
+                conversation=conversation, current_profile=profile_text
+            ),
+        },
     ]
     for attempt in range(MAX_ATTEMPTS):
         try:
