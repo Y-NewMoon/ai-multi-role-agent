@@ -472,7 +472,8 @@ $env:LLM_PROVIDER="fake"
 # R1：压测只衡量服务链路；bge-m3 在 20 并发下的 CPU 争用会淹没首 token 指标
 $env:EMBEDDING_PROVIDER="fake"
 $env:LORE_ENABLED="false"
-$env:TRACE_DIR="data/traces/loadtest-$(Get-Date -Format yyyyMMdd-HHmmss)"
+# 每次压测使用独立 trace 目录：eval/report/trace-<run_id>，run_id 与 --out 文件名一致
+$env:TRACE_DIR="eval/report/trace-20261021"
 $env:TRACE_SAMPLE_RATE="0.05"
 uv run python scripts/run_server.py --port 8010
 

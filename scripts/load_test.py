@@ -6,6 +6,8 @@
       --out eval/report/loadtest-20261021.json
 
 启动前先 `GET /health`，`llm_provider` 不是 `fake` 时退出 2（绝不指向真实生产 server）。
+trace 目录按 run 派生（`eval/report/trace-<run_id>`，不存在则创建、已存在则退出 2），
+启动 server 时必须用同路径的 `TRACE_DIR`（生产默认仍是 `settings.trace_dir`）。
 无 `httpx` 时写 `skipped=true` 报告并退出 0；不访问网络、不调用 LLM。
 """
 
@@ -56,6 +58,25 @@ def _git_dirty() -> bool:
 
 def _sha256_file(path: Path) -> str | None:
     return None if not path.exists() else hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _resolve_path(path: Path) -> Path:
+    """相对项目根解析（manifest 记相对路径，落到磁盘时用绝对路径比较）。"""
+    return path if path.is_absolute() else ROOT / path
+
+
+def _relative(path: Path) -> str:
+    """manifest 里统一记相对项目根的 posix 路径。"""
+    absolute = _resolve_path(path)
+    try:
+        return absolute.relative_to(ROOT).as_posix()
+    except ValueError:
+        return absolute.as_posix()
+
+
+def _run_trace_dir(run_id: str) -> Path:
+    """E-03：本次 run 的 trace 目录（唯一、不覆盖，与报告文件名同一个 run_id）。"""
+    return Path("eval") / "report" / f"trace-{run_id}"
 
 
 def percentile(values: list[float], p: float) -> float | None:
@@ -403,6 +424,31 @@ async def _run(args, session_ids: list[int]) -> int:
             )
             return 2
 
+        # E-03：本次 run 的 trace 必须落在唯一目录，否则 trace_sha256 会把更早 run 的
+        # trace 算进来。server 侧写入仍是 settings.trace_dir（生产默认不变），压测时
+        # 由 TRACE_DIR 显式指定；这里校验 /health 与派生目录一致，不一致就拒绝跑。
+        expected_trace_dir = _resolve_path(args.trace_dir)
+        server_trace_dir = health.get("trace_dir")
+        actual_trace_dir = (
+            _resolve_path(Path(str(server_trace_dir))) if server_trace_dir else None
+        )
+        if actual_trace_dir != expected_trace_dir:
+            print(
+                "[load_test] trace 目录不符：server /health 返回 "
+                f"{server_trace_dir!r}，期望 {_relative(args.trace_dir)}；"
+                f"请用 TRACE_DIR={_relative(args.trace_dir)} 启动 server（生产默认不变）",
+                file=sys.stderr,
+            )
+            return 2
+        if expected_trace_dir.exists():
+            print(
+                f"[load_test] trace 目录已存在，拒绝覆盖：{_relative(args.trace_dir)}"
+                "（换 --out 名或删除旧目录后重跑）",
+                file=sys.stderr,
+            )
+            return 2
+        expected_trace_dir.mkdir(parents=True, exist_ok=True)
+
         fake_before = health.get("fake_llm_calls")
         wall_started = time.perf_counter()
         batches = await asyncio.gather(
@@ -448,6 +494,7 @@ async def _run(args, session_ids: list[int]) -> int:
 def _emit(report: dict, *, args, provider: str, health: dict | None = None,
           session_ids: list[int] | None = None, cases: list[dict] | None = None) -> int:
     started_at = args.started_at
+    health = {**(health or {}), "trace_dir": _relative(args.trace_dir)}
     manifest = _build_manifest(
         run_id=args.run_id,
         command="uv run python scripts/load_test.py " + " ".join(args.argv),
@@ -550,6 +597,8 @@ def main(argv: list[str] | None = None) -> int:
         args.out_path = ROOT / args.out_path
     stem = args.out_path.stem
     args.run_id = stem[len("loadtest-"):] if stem.startswith("loadtest-") else stem
+    # E-03：trace 目录由 run_id 派生，启动 server 时须用同一路径的 TRACE_DIR
+    args.trace_dir = _run_trace_dir(args.run_id)
 
     try:
         import httpx  # noqa: F401
