@@ -199,6 +199,7 @@ class TraceRecorder:
         rerank_top: int | None,
         rewrite_used: bool,
         rewrite_ms: int,
+        stage_ms: dict[str, int | None] | None = None,
     ) -> None:
         if self._noop:
             return
@@ -206,7 +207,9 @@ class TraceRecorder:
             "lore_ids": [str(i) for i in lore_ids],
             "memory_count": int(memory_count),
             "rerank_top": None if rerank_top is None else int(rerank_top),
+            # M5-P0：`rewrite.ms` 保持旧口径（整段上界），真实改写耗时看 `stage_ms.rewrite_ms`
             "rewrite": {"used": bool(rewrite_used), "ms": int(rewrite_ms)},
+            "stage_ms": dict(stage_ms or {}),
         }
 
     def llm(

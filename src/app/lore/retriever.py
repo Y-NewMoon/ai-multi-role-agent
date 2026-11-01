@@ -14,6 +14,7 @@ import asyncio
 import json
 import os
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -38,6 +39,18 @@ REWRITE_TIMEOUT = 1.5
 # 使含 LLM 的 D 组位级可复现（见 §4.10 / §8.3）。
 REWRITE_CACHE_PATH = (
     Path(__file__).resolve().parents[3] / "eval" / "calibration" / "rewrites.json"
+)
+# M5-P0：分段计时的固定键集合（顺序即文档/报告顺序，只用于观测）。
+STAGE_KEYS = (
+    "rewrite_ms",
+    "always_on_ms",
+    "keyword_ms",
+    "vector_ms",
+    "fuse_ms",
+    "load_ms",
+    "rerank_ms",
+    "budget_ms",
+    "total_ms",
 )
 
 
@@ -77,6 +90,8 @@ class RetrievalResult:
     injected: list[LoreHit] = field(default_factory=list)
     lore_tokens: int = 0
     lore_cap: int = 0
+    # M5-P0：分段耗时（毫秒整数；未执行/异常路径为 None）。默认空 dict，不影响既有字段。
+    stage_ms: dict[str, int | None] = field(default_factory=dict)
 
 
 class Reranker(Protocol):
@@ -251,52 +266,87 @@ class Retriever:
         self._always_on_ratio = always_on_ratio
         self._top_k = top_k
         self._rewrite_timeout = rewrite_timeout
+        # M5-P0：最近一次 `retrieve()` 的分段耗时（异常路径也可读；仅观测，不参与决策）
+        self.last_stage_ms: dict[str, int | None] = {}
 
     async def retrieve(
         self, *, agent_id: int, query: str, history: list[str] | None = None
     ) -> RetrievalResult:
-        effective, used = await self._maybe_rewrite(query, history or [])
+        # M5-P0：只包时间，不改调用顺序、参数与异常语义（异常仍向上抛出）。
+        stage_ms: dict[str, int | None] = {name: None for name in STAGE_KEYS}
+        self.last_stage_ms = stage_ms
+        started = time.perf_counter()
+        try:
+            t = time.perf_counter()
+            effective, used = await self._maybe_rewrite(query, history or [])
+            stage_ms["rewrite_ms"] = _ms(t) if used else 0
 
-        async with self._session_factory() as db:
-            routes = await self._recall(db, agent_id=agent_id, query=effective)
+            async with self._session_factory() as db:
+                routes = await self._recall(
+                    db, agent_id=agent_id, query=effective, stage_ms=stage_ms
+                )
 
-        fused = _fuse(routes)[: self._top_k]
-        refs = {ref for refs in routes.values() for ref in refs} | {ref for ref, _ in fused}
-        rows = await self._load_rows(agent_id=agent_id, refs=refs)
+            t = time.perf_counter()
+            fused = _fuse(routes)[: self._top_k]
+            stage_ms["fuse_ms"] = _ms(t)
+            refs = {ref for refs in routes.values() for ref in refs} | {ref for ref, _ in fused}
+            t = time.perf_counter()
+            rows = await self._load_rows(agent_id=agent_id, refs=refs)
+            stage_ms["load_ms"] = _ms(t)
 
-        reranked, rerank_ok = await self._rerank(effective, fused, rows)
-        lore_cap = int(self._budget_tokens * self._lore_ratio)
-        always_cap = int(self._budget_tokens * self._always_on_ratio)
-        injected, total = self._fit_budget(
-            routes=routes,
-            reranked=reranked,
-            rows=rows,
-            always_cap=always_cap,
-            lore_cap=lore_cap,
-        )
-        return RetrievalResult(
-            query=query,
-            rewritten=effective,
-            rewrite_used=used,
-            routes=routes,
-            fused=list(fused),
-            reranked=list(reranked),
-            rerank=rerank_ok,
-            injected=injected,
-            lore_tokens=total,
-            lore_cap=lore_cap,
-        )
+            t = time.perf_counter()
+            reranked, rerank_ok = await self._rerank(effective, fused, rows)
+            stage_ms["rerank_ms"] = _ms(t) if rerank_ok else 0
+            lore_cap = int(self._budget_tokens * self._lore_ratio)
+            always_cap = int(self._budget_tokens * self._always_on_ratio)
+            t = time.perf_counter()
+            injected, total = self._fit_budget(
+                routes=routes,
+                reranked=reranked,
+                rows=rows,
+                always_cap=always_cap,
+                lore_cap=lore_cap,
+            )
+            stage_ms["budget_ms"] = _ms(t)
+            return RetrievalResult(
+                query=query,
+                rewritten=effective,
+                rewrite_used=used,
+                routes=routes,
+                fused=list(fused),
+                reranked=list(reranked),
+                rerank=rerank_ok,
+                injected=injected,
+                lore_tokens=total,
+                lore_cap=lore_cap,
+                stage_ms=stage_ms,
+            )
+        finally:
+            stage_ms["total_ms"] = _ms(started)
 
     # ---- 三路召回 ----
 
     async def _recall(
-        self, db: AsyncSession, *, agent_id: int, query: str
+        self,
+        db: AsyncSession,
+        *,
+        agent_id: int,
+        query: str,
+        stage_ms: dict[str, int | None] | None = None,
     ) -> dict[str, list[str]]:
-        return {
-            "always_on": await self._route_always_on(db, agent_id),
-            "keyword": await self._route_keyword(db, agent_id, query),
-            "vector": await self._route_vector(db, agent_id, query),
-        }
+        t = time.perf_counter()
+        always_on = await self._route_always_on(db, agent_id)
+        if stage_ms is not None:
+            stage_ms["always_on_ms"] = _ms(t)
+        t = time.perf_counter()
+        keyword = await self._route_keyword(db, agent_id, query)
+        if stage_ms is not None:
+            stage_ms["keyword_ms"] = _ms(t)
+        t = time.perf_counter()
+        vector = await self._route_vector(db, agent_id, query)
+        if stage_ms is not None:
+            stage_ms["vector_ms"] = _ms(t)
+        return {"always_on": always_on, "keyword": keyword, "vector": vector}
 
     async def _route_always_on(self, db: AsyncSession, agent_id: int) -> list[str]:
         stmt = (
@@ -456,6 +506,11 @@ class Retriever:
             return query, False
         rewritten = (rewritten or "").strip().replace("\n", " ")[:50]
         return (rewritten, True) if rewritten else (query, False)
+
+
+def _ms(started: float) -> int:
+    """`perf_counter` 起点的毫秒整数（四舍五入），只供 M5-P0 分段观测。"""
+    return int(round((time.perf_counter() - started) * 1000))
 
 
 def _routes_of(ref: str, routes: dict[str, list[str]]) -> list[str]:

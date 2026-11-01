@@ -46,8 +46,8 @@ async def retrieve_lore(
         query=query,
         history=_history(messages),
     )
-    # V2.4：检索旁路记录（不改检索算法）。Retriever 未暴露改写耗时，改写轮以
-    # 本次 retrieve 总耗时作为上界（§5 偏差已说明）。
+    # V2.4：检索旁路记录（不改检索算法）。`rewrite.ms` 仍是整段上界（旧口径）；
+    # M5-P0：真实分段耗时放 `stage_ms`，不改既有字段语义。
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     recorder = current_trace()
     if recorder is not None:
@@ -57,5 +57,6 @@ async def retrieve_lore(
             rerank_top=len(result.reranked) if result.rerank and result.reranked else None,
             rewrite_used=bool(result.rewrite_used),
             rewrite_ms=elapsed_ms if result.rewrite_used else 0,
+            stage_ms=result.stage_ms,
         )
     return {"recalled_lore": [hit.as_recalled() for hit in result.injected]}
