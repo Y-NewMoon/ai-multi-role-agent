@@ -110,7 +110,7 @@ async def lifespan(app: FastAPI):
     lore_retriever = Retriever(
         session_factory=session_factory,
         embedder=embed,
-        reranker=BgeReranker(),
+        reranker=BgeReranker(max_tokens=settings.lore_rerank_max_tokens),
         rewriter=LlmRewriter(llm),
         rewrite_enabled=settings.lore_query_rewrite,
         budget_tokens=settings.prompt_token_budget,
@@ -123,7 +123,7 @@ async def lifespan(app: FastAPI):
     lore_tool_retriever = Retriever(
         session_factory=session_factory,
         embedder=embed,
-        reranker=BgeReranker(),
+        reranker=BgeReranker(max_tokens=settings.lore_rerank_max_tokens),
         rewriter=None,
         rewrite_enabled=False,
         budget_tokens=settings.prompt_token_budget,

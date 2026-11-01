@@ -195,3 +195,65 @@ async def test_rerank_不可用时仍记录耗时(seeded) -> None:
     assert result.rerank_attempted is True
     assert result.rerank is False
     assert result.stage_ms["rerank_ms"] >= 40
+
+
+# ===== P12：rerank doc 侧 token 截断（默认 None 行为不变） =====
+
+
+class _FakeTokenizer:
+    """按空格切词；`decode` 还原为 `t{i}`，便于断言截断后的 doc 内容。"""
+
+    def __init__(self) -> None:
+        self.calls: list[int | None] = []
+
+    def __call__(
+        self, text: str, *, truncation=False, max_length=None, add_special_tokens=False
+    ):  # noqa: ANN001 - 模仿 HF tokenizer 的关键参数
+        ids = list(range(len(text.split())))
+        self.calls.append(max_length)
+        return {"input_ids": ids[:max_length] if truncation and max_length else ids}
+
+    def decode(self, ids, *, skip_special_tokens=True):  # noqa: ANN001
+        return " ".join(f"t{i}" for i in ids)
+
+
+class _FakeCrossEncoder:
+    """记录实际进入 predict 的 (query, doc) 对；不加载真实模型。"""
+
+    def __init__(self) -> None:
+        self.tokenizer = _FakeTokenizer()
+        self.seen: list[tuple[str, str]] = []
+
+    def predict(self, pairs):  # noqa: ANN001
+        self.seen = list(pairs)
+        return [1.0 - i / 10.0 for i in range(len(pairs))]
+
+
+def test_rerank_默认不截断_输入逐字一致() -> None:
+    """P12：`max_tokens=None`（默认）不调 tokenizer，doc 原样进入 predict。"""
+    from app.lore.retriever import BgeReranker
+
+    reranker = BgeReranker()
+    fake = _FakeCrossEncoder()
+    reranker._model = fake  # noqa: SLF001 - 绕过真实模型加载
+    reranker._loaded = True  # noqa: SLF001
+    docs = ["一二 三四 五六 七八", "九十"]
+    assert reranker.available is True
+    reranker.rank("q", docs, top_n=2)
+    assert fake.seen == [("q", docs[0]), ("q", docs[1])]
+    assert fake.tokenizer.calls == []
+
+
+def test_rerank_设置max_tokens时只截断doc侧() -> None:
+    """P12：设置 `max_tokens` 后只截断 doc，query 保持不变；返回仍是原下标。"""
+    from app.lore.retriever import BgeReranker
+
+    reranker = BgeReranker(max_tokens=2)
+    fake = _FakeCrossEncoder()
+    reranker._model = fake  # noqa: SLF001
+    reranker._loaded = True  # noqa: SLF001
+    docs = ["a b c d", "e f g h i"]
+    out = reranker.rank("q", docs, top_n=2)
+    assert fake.seen == [("q", "t0 t1"), ("q", "t0 t1")]
+    assert fake.tokenizer.calls == [2, 2]
+    assert [idx for idx, _ in out] == [0, 1]

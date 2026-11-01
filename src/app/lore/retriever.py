@@ -113,10 +113,17 @@ class NullReranker:
 
 
 class BgeReranker:
-    """CrossEncoder `BAAI/bge-reranker-v2-m3` 懒加载；加载失败 `available=False`。"""
+    """CrossEncoder `BAAI/bge-reranker-v2-m3` 懒加载；加载失败 `available=False`。
 
-    def __init__(self, model_name: str = "BAAI/bge-reranker-v2-m3") -> None:
+    `max_tokens=None`（默认）时不做任何截断，与 M5-P0 之前逐字一致；
+    显式设置时只对 **doc 侧** 做 token 截断（截断后再 `predict`），供候选/截断消融。
+    """
+
+    def __init__(
+        self, model_name: str = "BAAI/bge-reranker-v2-m3", *, max_tokens: int | None = None
+    ) -> None:
         self._model_name = model_name
+        self._max_tokens = max_tokens
         self._model = None
         self._loaded = False
 
@@ -138,10 +145,23 @@ class BgeReranker:
         except Exception:  # noqa: BLE001 - 加载失败一律降级，不打断对话
             self._model = None
 
+    def _truncate_doc(self, doc: str) -> str:
+        """按 `max_tokens` 截断 doc 侧 token（用模型自带 tokenizer，无 tokenizer 时原样返回）。"""
+        tokenizer = getattr(self._model, "tokenizer", None)
+        if tokenizer is None:
+            return doc
+        ids = tokenizer(
+            doc, truncation=True, max_length=self._max_tokens, add_special_tokens=False
+        )["input_ids"]
+        return tokenizer.decode(ids, skip_special_tokens=True)
+
     def rank(self, query: str, docs: list[str], top_n: int) -> list[tuple[int, float]]:
         self._ensure()
         if self._model is None:
             return NullReranker().rank(query, docs, top_n)
+        # max_tokens=None（默认）时不调用 tokenizer，输入与改造前逐字一致
+        if self._max_tokens is not None:
+            docs = [self._truncate_doc(doc) for doc in docs]
         scores = self._model.predict([(query, doc) for doc in docs])
         order = sorted(
             range(len(docs)), key=lambda i: (-float(scores[i]), i)

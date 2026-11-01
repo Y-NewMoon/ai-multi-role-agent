@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     lore_always_on_ratio: float = 0.08  # always-on 段预算占比（契约 4.7）
     lore_query_rewrite: bool = True  # 查询改写开关（CI 与单测用 false）
     lore_top_k: int = 20  # 单路召回与融合后进入 rerank 的条数
+    # doc 侧 token 截断上限（None=不截断，行为与 M5-P0 前完全一致）；仅消融实验设置
+    lore_rerank_max_tokens: int | None = None
 
     # ===== Skill 工具层（V2.2 · §2.10 / §2.5-3 / §2.4）=====
     # 静态 lore 注入模式：full（V2.1 全量）/ always_on（只注入 always-on）/ off（不注入）。

@@ -174,7 +174,7 @@ async def _run(args: argparse.Namespace) -> int:
     engine = create_engine(settings._to_psycopg(dsn))
     session_factory = create_session_factory(engine)
     embedder = create_embedding_provider(settings)
-    reranker = BgeReranker(RERANK_MODEL)
+    reranker = BgeReranker(RERANK_MODEL, max_tokens=settings.lore_rerank_max_tokens)
     rerank_available = bool(reranker.available)
     rewriter = None
     if settings.lore_query_rewrite:
@@ -229,6 +229,8 @@ async def _run(args: argparse.Namespace) -> int:
             settings.embedding_model if settings.embedding_provider == "local" else None
         ),
         "rerank_model": RERANK_MODEL,
+        "rerank_max_tokens": settings.lore_rerank_max_tokens,
+        "lore_top_k": settings.lore_top_k,
         "rerank_available": rerank_available,
         "lore_enabled": settings.lore_enabled,
         "lore_query_rewrite": settings.lore_query_rewrite,
