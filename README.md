@@ -425,6 +425,10 @@ curl.exe "http://127.0.0.1:8000/api/v1/memory/state?agent=ext&session=main"
   `llm.prompt_tokens` 是一轮内**所有 LLM 调用**（生成 + 事实抽取等）的估算之和，通常更大。
   两者不可直接相减或互换。`retrieval.rewrite.ms` 是整轮 `retrieve_lore` 节点的**上界**（含三路召回/融合），
   不是纯改写耗时。
+- **`retrieval.stage_ms`（M5-P0）**：检索链路 9 段耗时（毫秒整数）——`rewrite_ms` / `always_on_ms` /
+  `keyword_ms` / `vector_ms` / `fuse_ms` / `load_ms` / `rerank_ms` / `budget_ms` / `total_ms`；
+  未触发（改写/重排）记 `0`，异常路径其余段为 `null`。**`rewrite_ms` 旧字段仍是整段上界，真实改写耗时看
+  `stage_ms.rewrite_ms`**。单请求真实链路测量用 `scripts/probe_lore_latency.py`（与并发压测不可互换）。
 - **成本**：token 用 `cjk1_other4` 估算（中文 1 字 ≈ 1 token，其余 4 字 ≈ 1 token），
   `cost_cny = round(prompt/1e6*LLM_PRICE_INPUT_CNY_PER_1M + completion/1e6*LLM_PRICE_OUTPUT_CNY_PER_1M, 6)`。
   **默认价格是示例值，部署必须按实际账单覆盖 `.env`**；估算是相对值，不是账单。
