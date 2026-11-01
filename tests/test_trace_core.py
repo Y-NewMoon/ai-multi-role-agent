@@ -93,7 +93,7 @@ def test_trace_schema_fields(store, trace_dir):
         "lore_ids": ["12:3"],
         "memory_count": 4,
         "rerank_top": 3,
-        "rewrite": {"used": True, "ms": 300},
+        "rewrite": {"used": True, "ms": 300, "attempted": False},
         # M5-P0：调用方未传 stage_ms 时嵌套键为空 dict（不新增根级字段）
         "stage_ms": {},
     }

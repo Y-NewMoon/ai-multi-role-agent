@@ -57,6 +57,7 @@ async def retrieve_lore(
             rerank_top=len(result.reranked) if result.rerank and result.reranked else None,
             rewrite_used=bool(result.rewrite_used),
             rewrite_ms=elapsed_ms if result.rewrite_used else 0,
+            rewrite_attempted=result.rewrite_attempted,
             stage_ms=result.stage_ms,
         )
     return {"recalled_lore": [hit.as_recalled() for hit in result.injected]}

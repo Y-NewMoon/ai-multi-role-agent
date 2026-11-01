@@ -199,6 +199,7 @@ class TraceRecorder:
         rerank_top: int | None,
         rewrite_used: bool,
         rewrite_ms: int,
+        rewrite_attempted: bool = False,
         stage_ms: dict[str, int | None] | None = None,
     ) -> None:
         if self._noop:
@@ -208,7 +209,12 @@ class TraceRecorder:
             "memory_count": int(memory_count),
             "rerank_top": None if rerank_top is None else int(rerank_top),
             # M5-P0：`rewrite.ms` 保持旧口径（整段上界），真实改写耗时看 `stage_ms.rewrite_ms`
-            "rewrite": {"used": bool(rewrite_used), "ms": int(rewrite_ms)},
+            # P6：`attempted` 表示真的调过改写（超时/空串失败时 `used=false` 但 attempted=true）
+            "rewrite": {
+                "used": bool(rewrite_used),
+                "ms": int(rewrite_ms),
+                "attempted": bool(rewrite_attempted),
+            },
             "stage_ms": dict(stage_ms or {}),
         }
 

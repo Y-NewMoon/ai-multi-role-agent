@@ -9,7 +9,9 @@
 真库用例需 `alembic upgrade head`；库不可用时由 `real_session_factory` 自动跳过。
 """
 
+import asyncio
 import hashlib
+import time
 
 import pytest
 from langchain_core.embeddings import Embeddings
@@ -100,9 +102,10 @@ async def test_stage_keys_complete(seeded) -> None:
     assert len(result.stage_ms) == 9
     for name, value in result.stage_ms.items():
         assert isinstance(value, (int, type(None))), name
-    # 未启用改写 / NullReranker：按契约记 0（而不是 None）
+    # 未启用改写记 0；NullReranker 配了 reranker → 记真实耗时（P6）、attempted=true
     assert result.stage_ms["rewrite_ms"] == 0
-    assert result.stage_ms["rerank_ms"] == 0
+    assert result.rewrite_attempted is False
+    assert result.rerank_attempted is True
     assert isinstance(result.stage_ms["total_ms"], int)
 
 
@@ -146,3 +149,49 @@ async def test_exception_path_records_total(monkeypatch) -> None:
     stage = retriever.last_stage_ms
     assert isinstance(stage["total_ms"], int)
     assert [stage[name] for name in STAGE_KEYS if name != "total_ms"] == [None] * 8
+
+
+async def test_rewrite_失败时仍记录真实耗时(seeded) -> None:
+    """P6：改写被触发但返回空串 → used=False，但 rewrite_ms 记真实耗时。"""
+    session_factory, agent_id = seeded
+
+    class _SlowEmptyRewriter:
+        async def rewrite(self, query, history):  # noqa: ANN001
+            await asyncio.sleep(0.05)
+            return ""
+
+    retriever = Retriever(
+        session_factory=session_factory,
+        embedder=_FakeEmbedder(),
+        reranker=NullReranker(),
+        rewriter=_SlowEmptyRewriter(),
+        rewrite_enabled=True,
+    )
+    result = await retriever.retrieve(agent_id=agent_id, query="这茶")
+    assert result.rewrite_attempted is True
+    assert result.rewrite_used is False
+    assert result.stage_ms["rewrite_ms"] >= 40
+
+
+async def test_rerank_不可用时仍记录耗时(seeded) -> None:
+    """P6：reranker 存在但可用性探测失败（耗时） → rerank=False，rerank_ms 记真实耗时。"""
+    session_factory, agent_id = seeded
+
+    class _SlowUnavailableReranker:
+        @property
+        def available(self) -> bool:
+            time.sleep(0.05)  # 模拟“加载失败前的探测/加载耗时”
+            return False
+
+        def rank(self, query, docs, top_n):  # noqa: ANN001
+            return list(enumerate([0.0] * len(docs)))[:top_n]
+
+    retriever = Retriever(
+        session_factory=session_factory,
+        embedder=_FakeEmbedder(),
+        reranker=_SlowUnavailableReranker(),
+    )
+    result = await retriever.retrieve(agent_id=agent_id, query=_QUERY)
+    assert result.rerank_attempted is True
+    assert result.rerank is False
+    assert result.stage_ms["rerank_ms"] >= 40

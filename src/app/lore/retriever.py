@@ -92,6 +92,9 @@ class RetrievalResult:
     lore_cap: int = 0
     # M5-P0：分段耗时（毫秒整数；未执行/异常路径为 None）。默认空 dict，不影响既有字段。
     stage_ms: dict[str, int | None] = field(default_factory=dict)
+    # M5-P0 P6：是否真的发起过改写/重排（`used` 只表示"生效"，失败/降级时仍可能为 True 的 attempted）
+    rewrite_attempted: bool = False
+    rerank_attempted: bool = False
 
 
 class Reranker(Protocol):
@@ -278,8 +281,10 @@ class Retriever:
         started = time.perf_counter()
         try:
             t = time.perf_counter()
-            effective, used = await self._maybe_rewrite(query, history or [])
-            stage_ms["rewrite_ms"] = _ms(t) if used else 0
+            effective, used, rewrite_attempted = await self._maybe_rewrite(
+                query, history or []
+            )
+            stage_ms["rewrite_ms"] = _ms(t) if rewrite_attempted else 0
 
             async with self._session_factory() as db:
                 routes = await self._recall(
@@ -294,9 +299,11 @@ class Retriever:
             rows = await self._load_rows(agent_id=agent_id, refs=refs)
             stage_ms["load_ms"] = _ms(t)
 
-            t = time.perf_counter()
-            reranked, rerank_ok = await self._rerank(effective, fused, rows)
-            stage_ms["rerank_ms"] = _ms(t) if rerank_ok else 0
+            reranked, rerank_ok = await self._rerank(
+                effective, fused, rows, stage_ms=stage_ms
+            )
+            # P6：只要配置了 reranker 就算"尝试过"（可用性检查/加载失败同样耗时）
+            rerank_attempted = self._reranker is not None
             lore_cap = int(self._budget_tokens * self._lore_ratio)
             always_cap = int(self._budget_tokens * self._always_on_ratio)
             t = time.perf_counter()
@@ -320,6 +327,8 @@ class Retriever:
                 lore_tokens=total,
                 lore_cap=lore_cap,
                 stage_ms=stage_ms,
+                rewrite_attempted=rewrite_attempted,
+                rerank_attempted=rerank_attempted,
             )
         finally:
             stage_ms["total_ms"] = _ms(started)
@@ -426,16 +435,24 @@ class Retriever:
         query: str,
         fused: list[tuple[str, float]],
         rows: dict[str, LoreChunk],
+        stage_ms: dict[str, int | None] | None = None,
     ) -> tuple[list[tuple[str, float]], bool]:
-        docs = [(ref, rows[ref].content) for ref, _ in fused if ref in rows]
-        if not docs or self._reranker is None:
-            return list(fused), False
-        if not getattr(self._reranker, "available", True):
-            return list(fused), False  # 降级：保持 RRF 顺序
-        order = await asyncio.to_thread(
-            self._reranker.rank, query, [d for _, d in docs], len(docs)
-        )
-        return [(docs[idx][0], score) for idx, score in order], True
+        """P6：`stage_ms` 由本方法自行记录——配了 reranker 就记真实耗时（成功/降级都记）。"""
+        t = time.perf_counter()
+        reranker = self._reranker
+        try:
+            docs = [(ref, rows[ref].content) for ref, _ in fused if ref in rows]
+            if not docs or reranker is None:
+                return list(fused), False
+            if not getattr(reranker, "available", True):
+                return list(fused), False  # 降级：保持 RRF 顺序（加载/探测耗时仍计入）
+            order = await asyncio.to_thread(
+                reranker.rank, query, [d for _, d in docs], len(docs)
+            )
+            return [(docs[idx][0], score) for idx, score in order], True
+        finally:
+            if stage_ms is not None:
+                stage_ms["rerank_ms"] = _ms(t) if reranker is not None else 0
 
     def _fit_budget(
         self,
@@ -491,21 +508,24 @@ class Retriever:
             total += row.token_count
         return injected, total
 
-    async def _maybe_rewrite(self, query: str, history: list[str]) -> tuple[str, bool]:
+    async def _maybe_rewrite(
+        self, query: str, history: list[str]
+    ) -> tuple[str, bool, bool]:
+        """返回 `(query, used, attempted)`：`attempted` 表示真的调用过改写（含超时/空串失败）。"""
         if (
             not self._rewrite_enabled
             or self._rewriter is None
             or not needs_rewrite(query, history)
         ):
-            return query, False
+            return query, False, False
         try:
             rewritten = await asyncio.wait_for(
                 self._rewriter.rewrite(query, history), self._rewrite_timeout
             )
         except Exception:  # noqa: BLE001 - 超时/异常一律回退原 query（契约 4.6）
-            return query, False
+            return query, False, True
         rewritten = (rewritten or "").strip().replace("\n", " ")[:50]
-        return (rewritten, True) if rewritten else (query, False)
+        return (rewritten, True, True) if rewritten else (query, False, True)
 
 
 def _ms(started: float) -> int:
