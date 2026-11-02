@@ -67,6 +67,14 @@ class Settings(BaseSettings):
     # doc 侧 token 截断上限（None=不截断，行为与 M5-P0 前完全一致）；仅消融实验设置
     lore_rerank_max_tokens: int | None = None
 
+    # ===== 并发治理（M5 手段①：CPU 争用）=====
+    # 总开关：false = 恢复改造前行为（无闸门，`*_queue_ms` 恒为 0）
+    lore_concurrency_gate_enabled: bool = True
+    lore_rerank_concurrency: int = 2  # 同时在跑的 rerank 调用数（跨请求）
+    lore_embed_concurrency: int = 2  # 同时在跑的 embed_query 调用数（跨请求）
+    # torch intra-op 线程数（None = 不设置，沿用 torch 默认）；interop 固定为 1
+    lore_torch_threads: int | None = 8
+
     # ===== Skill 工具层（V2.2 · §2.10 / §2.5-3 / §2.4）=====
     # 静态 lore 注入模式：full（V2.1 全量）/ always_on（只注入 always-on）/ off（不注入）。
     # 供 agentic RAG 三策略对比；默认 full 保持 V2.1 行为。
@@ -166,6 +174,19 @@ class Settings(BaseSettings):
                 "db_pool_max_size=%s < db_pool_min_size=%s，将按 min_size 处理",
                 self.db_pool_max_size,
                 self.db_pool_min_size,
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_concurrency_gate(self) -> "Settings":
+        """M5 手段①：闸门容量/线程数非法值 **启动即失败**（不静默回默认）。"""
+        for name in ("lore_rerank_concurrency", "lore_embed_concurrency"):
+            value = getattr(self, name)
+            if value <= 0:
+                raise ValueError(f"{name}={value} 必须 > 0（并发闸门容量非法）")
+        if self.lore_torch_threads is not None and self.lore_torch_threads <= 0:
+            raise ValueError(
+                f"lore_torch_threads={self.lore_torch_threads} 必须 > 0 或为空（None=不改 torch 默认）"
             )
         return self
 

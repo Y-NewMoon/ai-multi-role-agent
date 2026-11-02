@@ -16,7 +16,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from app.agents.graph import build_graph
 from app.api.v1 import api_router
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.core.clock import fixed_now_raw, validate_fixed_now
 from app.core.error_handlers import register_exception_handlers
 from app.core.logging import configure_logging
@@ -41,10 +41,43 @@ from app.skills.builtin.web_search import HttpSearchProvider
 from app.skills.executor import ToolExecutor
 
 
+def _configure_torch_threads(settings: Settings) -> None:
+    """M5 手段①：把 torch 线程数收敛到配置值（必须在模型加载/并行工作之前调用）。
+
+    注意：`OMP_NUM_THREADS` 在 torch 已导入后设置无效，因此只能走 torch API；
+    `set_num_interop_threads` 在并行工作开始后调用会抛 `RuntimeError`，忽略即可。
+    """
+    log = logging.getLogger(__name__)
+    threads = settings.lore_torch_threads
+    try:
+        import torch
+    except Exception:  # noqa: BLE001 - 未安装 torch（fake 嵌入）时跳过，不影响启动
+        log.info("torch 不可用，跳过线程数收敛（lore_torch_threads=%s）", threads)
+        return
+    if threads is not None:
+        try:
+            torch.set_num_threads(threads)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("torch.set_num_threads(%s) 失败：%s", threads, exc)
+        try:
+            torch.set_num_interop_threads(1)
+        except Exception as exc:  # noqa: BLE001 - 已在并行工作中调用则跳过
+            log.info("torch.set_num_interop_threads(1) 跳过：%s", exc)
+    log.info(
+        "torch threads = %s, interop = %s（配置 lore_torch_threads=%s）",
+        torch.get_num_threads(),
+        torch.get_num_interop_threads(),
+        threads,
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging()
     settings = get_settings()
+
+    # M5 手段①：先收敛 torch 线程，再加载任何模型（embedding 在下方创建）
+    _configure_torch_threads(settings)
 
     # V3 M1：冻结时钟非法值启动即失败（不把错误带进请求链路）
     validate_fixed_now()
@@ -117,6 +150,9 @@ async def lifespan(app: FastAPI):
         lore_ratio=settings.lore_max_ratio,
         always_on_ratio=settings.lore_always_on_ratio,
         top_k=settings.lore_top_k,
+        rerank_concurrency=settings.lore_rerank_concurrency,
+        embed_concurrency=settings.lore_embed_concurrency,
+        gate_enabled=settings.lore_concurrency_gate_enabled,
     )
 
     # V2.2 Skill 工具层：read_lore 复用同一检索器但关闭 query 改写（D7：杜绝工具内再调 LLM）
@@ -130,6 +166,9 @@ async def lifespan(app: FastAPI):
         lore_ratio=settings.lore_max_ratio,
         always_on_ratio=settings.lore_always_on_ratio,
         top_k=settings.lore_top_k,
+        rerank_concurrency=settings.lore_rerank_concurrency,
+        embed_concurrency=settings.lore_embed_concurrency,
+        gate_enabled=settings.lore_concurrency_gate_enabled,
     )
     # 5 个内置工具；搜索后端缺 URL/KEY 时 web_search 返回 `unavailable`（不阻塞启动）
     skill_registry = build_default_registry(

@@ -41,14 +41,20 @@ REWRITE_CACHE_PATH = (
     Path(__file__).resolve().parents[3] / "eval" / "calibration" / "rewrites.json"
 )
 # M5-P0：分段计时的固定键集合（顺序即文档/报告顺序，只用于观测）。
+# M5 手段①：新增 queue/compute 细分——`vector_ms`/`rerank_ms` 仍是旧口径（排队+计算），
+# `*_queue_ms` 是等闸门的时间，`*_compute_ms` 是线程内纯计算时间（关闸门时 queue 恒为 0）。
 STAGE_KEYS = (
     "rewrite_ms",
     "always_on_ms",
     "keyword_ms",
     "vector_ms",
+    "embed_queue_ms",
+    "embed_compute_ms",
     "fuse_ms",
     "load_ms",
     "rerank_ms",
+    "rerank_queue_ms",
+    "rerank_compute_ms",
     "budget_ms",
     "total_ms",
 )
@@ -278,6 +284,9 @@ class Retriever:
         always_on_ratio: float = 0.08,
         top_k: int = TOP_K,
         rewrite_timeout: float = REWRITE_TIMEOUT,
+        rerank_concurrency: int = 2,
+        embed_concurrency: int = 2,
+        gate_enabled: bool = True,
     ) -> None:
         self._session_factory = session_factory
         self._embedder = embedder
@@ -289,6 +298,14 @@ class Retriever:
         self._always_on_ratio = always_on_ratio
         self._top_k = top_k
         self._rewrite_timeout = rewrite_timeout
+        # M5 手段①：并发闸门（跨请求限制“同时在跑的 torch 调用数”）。
+        # 关闸门时**不创建**信号量，行为与改造前逐字一致；容量在构造时注入，便于单测用小容量。
+        if gate_enabled and (rerank_concurrency <= 0 or embed_concurrency <= 0):
+            raise ValueError(
+                "rerank_concurrency/embed_concurrency 必须 > 0（闸门容量非法）"
+            )
+        self._rerank_sem = asyncio.Semaphore(rerank_concurrency) if gate_enabled else None
+        self._embed_sem = asyncio.Semaphore(embed_concurrency) if gate_enabled else None
         # M5-P0：最近一次 `retrieve()` 的分段耗时（异常路径也可读；仅观测，不参与决策）
         self.last_stage_ms: dict[str, int | None] = {}
 
@@ -372,7 +389,7 @@ class Retriever:
         if stage_ms is not None:
             stage_ms["keyword_ms"] = _ms(t)
         t = time.perf_counter()
-        vector = await self._route_vector(db, agent_id, query)
+        vector = await self._route_vector(db, agent_id, query, stage_ms=stage_ms)
         if stage_ms is not None:
             stage_ms["vector_ms"] = _ms(t)
         return {"always_on": always_on, "keyword": keyword, "vector": vector}
@@ -414,11 +431,15 @@ class Retriever:
         return list((await db.execute(stmt)).scalars().all())
 
     async def _route_vector(
-        self, db: AsyncSession, agent_id: int, query: str
+        self,
+        db: AsyncSession,
+        agent_id: int,
+        query: str,
+        stage_ms: dict[str, int | None] | None = None,
     ) -> list[str]:
         if self._embedder is None:
             return []
-        vector = await asyncio.to_thread(self._embedder.embed_query, query)
+        vector = await self._embed_query(query, stage_ms=stage_ms)
         stmt = (
             select(LoreChunk.source_ref)
             .where(
@@ -430,6 +451,29 @@ class Retriever:
             .limit(self._top_k)
         )
         return list((await db.execute(stmt)).scalars().all())
+
+    async def _embed_query(
+        self, query: str, *, stage_ms: dict[str, int | None] | None = None
+    ) -> list[float]:
+        """M5 手段①：embed 闸门在 `to_thread` **之外**（先占名额再派发线程）。"""
+        sem = self._embed_sem
+        acquired = False
+        queue_ms: int | None = None
+        compute_t: float | None = None
+        try:
+            queue_t = time.perf_counter()
+            if sem is not None:
+                await sem.acquire()
+                acquired = True
+            queue_ms = 0 if sem is None else _ms(queue_t)
+            compute_t = time.perf_counter()
+            return await asyncio.to_thread(self._embedder.embed_query, query)
+        finally:
+            if stage_ms is not None:
+                stage_ms["embed_queue_ms"] = 0 if queue_ms is None else queue_ms
+                stage_ms["embed_compute_ms"] = 0 if compute_t is None else _ms(compute_t)
+            if acquired:
+                sem.release()
 
     # ---- 融合与重排 ----
 
@@ -457,15 +501,30 @@ class Retriever:
         rows: dict[str, LoreChunk],
         stage_ms: dict[str, int | None] | None = None,
     ) -> tuple[list[tuple[str, float]], bool]:
-        """P6：`stage_ms` 由本方法自行记录——配了 reranker 就记真实耗时（成功/降级都记）。"""
+        """P6：`stage_ms` 由本方法自行记录——配了 reranker 就记真实耗时（成功/降级都记）。
+
+        M5 手段①：闸门在 `to_thread` **之外**；`rerank_ms` 仍是旧的“排队+计算”合计，
+        另外记 `rerank_queue_ms`（等闸门）与 `rerank_compute_ms`（线程内计算）。
+        """
         t = time.perf_counter()
         reranker = self._reranker
+        sem = self._rerank_sem
+        acquired = False
+        queue_ms: int | None = None
+        compute_t: float | None = None
         try:
             docs = [(ref, rows[ref].content) for ref, _ in fused if ref in rows]
             if not docs or reranker is None:
                 return list(fused), False
             if not getattr(reranker, "available", True):
                 return list(fused), False  # 降级：保持 RRF 顺序（加载/探测耗时仍计入）
+            queue_t = time.perf_counter()
+            if sem is not None:
+                await sem.acquire()
+                acquired = True
+            # 必须在放行后立刻结算排队时间（放到 finally 会把计算时间也算进去）
+            queue_ms = 0 if sem is None else _ms(queue_t)
+            compute_t = time.perf_counter()
             order = await asyncio.to_thread(
                 reranker.rank, query, [d for _, d in docs], len(docs)
             )
@@ -473,6 +532,12 @@ class Retriever:
         finally:
             if stage_ms is not None:
                 stage_ms["rerank_ms"] = _ms(t) if reranker is not None else 0
+                stage_ms["rerank_queue_ms"] = 0 if queue_ms is None else queue_ms
+                stage_ms["rerank_compute_ms"] = (
+                    0 if compute_t is None else _ms(compute_t)
+                )
+            if acquired:
+                sem.release()
 
     def _fit_budget(
         self,
