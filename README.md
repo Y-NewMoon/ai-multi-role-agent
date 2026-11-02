@@ -143,6 +143,10 @@ npm run dev                                # http://localhost:5173
 | `LORE_QUERY_REWRITE` | `true` | 查询改写开关（含代词、过短，或上一轮有未消解指代时触发；CI 与单测用 false） |
 | `LORE_TOP_K` | `20` | 单路召回与融合后进入 rerank 的条数上限 |
 | `LORE_STATIC_MODE` | `full` | V2.2 静态注入模式：`full`（V2.1 行为，全量检索）/ `always_on`（只注入核心设定，不走向量/关键词/rerank）/ `off`（不注入）；供 agentic RAG 三策略对比 |
+| `LORE_CONCURRENCY_GATE_ENABLED` | `true` | rerank/embed 并发闸门总开关；`false` = 恢复改造前行为（无闸门，`*_queue_ms` 恒为 0） |
+| `LORE_RERANK_CONCURRENCY` | `2` | 同时在跑的 rerank 调用数（跨请求）；**≤0 启动即报错** |
+| `LORE_EMBED_CONCURRENCY` | `2` | 同时在跑的 `embed_query` 调用数（跨请求）；**≤0 启动即报错** |
+| `LORE_TORCH_THREADS` | `8` | 启动时 `torch.set_num_threads(N)`（interop 固定 1）；留空 = 沿用 torch 默认。**与闸门容量配对：容量 × 线程 ≈ 物理核数** |
 | `WEB_SEARCH_URL` | 空 | `web_search` 工具后端地址；与 KEY 任一为空时该工具返回 `unavailable`（不算失败） |
 | `WEB_SEARCH_API_KEY` | 空 | 同上 |
 | `SKILL_MAX_TOOL_ROUNDS` | `3` | 图内工具循环上限（达到上限强制文本收尾） |
@@ -425,10 +429,13 @@ curl.exe "http://127.0.0.1:8000/api/v1/memory/state?agent=ext&session=main"
   `llm.prompt_tokens` 是一轮内**所有 LLM 调用**（生成 + 事实抽取等）的估算之和，通常更大。
   两者不可直接相减或互换。`retrieval.rewrite.ms` 是整轮 `retrieve_lore` 节点的**上界**（含三路召回/融合），
   不是纯改写耗时。
-- **`retrieval.stage_ms`（M5-P0）**：检索链路 9 段耗时（毫秒整数）——`rewrite_ms` / `always_on_ms` /
-  `keyword_ms` / `vector_ms` / `fuse_ms` / `load_ms` / `rerank_ms` / `budget_ms` / `total_ms`；
-  未触发（改写/重排）记 `0`，异常路径其余段为 `null`。**`rewrite_ms` 旧字段仍是整段上界，真实改写耗时看
-  `stage_ms.rewrite_ms`**。单请求真实链路测量用 `scripts/probe_lore_latency.py`（与并发压测不可互换）。
+- **`retrieval.stage_ms`（M5-P0 / M5 手段①）**：检索链路 13 段耗时（毫秒整数）——`rewrite_ms` / `always_on_ms` /
+  `keyword_ms` / `vector_ms` / `embed_queue_ms` / `embed_compute_ms` / `fuse_ms` / `load_ms` / `rerank_ms` /
+  `rerank_queue_ms` / `rerank_compute_ms` / `budget_ms` / `total_ms`；
+  未触发（改写/重排）记 `0`，异常路径其余段为 `null`。**`vector_ms` / `rerank_ms` 保持旧口径（排队+计算合计）**，
+  排队与纯计算分别看 `*_queue_ms` / `*_compute_ms`（关闸门时 queue 恒为 0）。
+  **`rewrite_ms` 旧字段仍是整段上界，真实改写耗时看 `stage_ms.rewrite_ms`**。单请求真实链路测量用
+  `scripts/probe_lore_latency.py`（与并发压测不可互换）。
 - **成本**：token 用 `cjk1_other4` 估算（中文 1 字 ≈ 1 token，其余 4 字 ≈ 1 token），
   `cost_cny = round(prompt/1e6*LLM_PRICE_INPUT_CNY_PER_1M + completion/1e6*LLM_PRICE_OUTPUT_CNY_PER_1M, 6)`。
   **默认价格是示例值，部署必须按实际账单覆盖 `.env`**；估算是相对值，不是账单。
@@ -495,6 +502,8 @@ uv run python scripts/seed_loadtest.py --cleanup --prefix loadtest-20261022
 `fake_llm_calls` 计数器，差值写 `fake_llm_calls`（不再用“成功请求数”冒充）。然后并发打 `/chat/stream`，
 统计错误率、首 token / 总耗时 p50、p95 与吞吐；输出 JSON + `.cases.jsonl`（逐请求原始数据，可独立重算）
 + Markdown + manifest。manifest 记录 server 的真实库名、嵌入/世界书/trace 配置与 trace 输入哈希。
+**真实并发 = `--session-ids` 的会话数**（每会话一条 worker）：`--concurrency` 只是校验/展示字段，
+必须与会话数严格相等，否则脚本打印错误并退出 2（不要再用它“声称”并发数）。
 `usage.llm_calls=0`。fake LLM/嵌入只测服务链路，**不代表真实模型/检索质量延迟**；该配置与生产差异见交接文档 §5。
 无 `httpx` 时写 `skipped` 报告并退出 0。
 

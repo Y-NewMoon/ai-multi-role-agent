@@ -95,11 +95,11 @@ async def seeded(real_session_factory):
 
 
 async def test_stage_keys_complete(seeded) -> None:
-    """1）9 段齐全，值为 int 或 None。"""
+    """1）13 段齐全（M5 手段①新增 4 个 queue/compute 细分），值为 int 或 None。"""
     session_factory, agent_id = seeded
     result = await _retriever(session_factory).retrieve(agent_id=agent_id, query=_QUERY)
     assert list(result.stage_ms) == list(STAGE_KEYS)
-    assert len(result.stage_ms) == 9
+    assert len(result.stage_ms) == 13
     for name, value in result.stage_ms.items():
         assert isinstance(value, (int, type(None))), name
     # 未启用改写记 0；NullReranker 配了 reranker → 记真实耗时（P6）、attempted=true
@@ -148,7 +148,9 @@ async def test_exception_path_records_total(monkeypatch) -> None:
         await retriever.retrieve(agent_id=1, query=_QUERY)
     stage = retriever.last_stage_ms
     assert isinstance(stage["total_ms"], int)
-    assert [stage[name] for name in STAGE_KEYS if name != "total_ms"] == [None] * 8
+    assert [stage[name] for name in STAGE_KEYS if name != "total_ms"] == [None] * (
+        len(STAGE_KEYS) - 1
+    )
 
 
 async def test_rewrite_失败时仍记录真实耗时(seeded) -> None:
