@@ -12,9 +12,9 @@
 | 自动化测试 | **608 collected**（其中的真库集成用例在无 `TEST_DATABASE_URL` 时自动 skip） | `uv run pytest -q` |
 | 评测集 | **8 套 / 350 条**（golden 40 · scenario 80 · adversarial 40 · retrieval 60 · lore 40 · memory 40 · skill_use 30 · agentic_rag 20） | `eval/suites/` |
 | 检索质量 | hit@1 **0.85 → 0.90 → 0.975 → 1.00**（纯向量 → +关键词 → +重排 → +改写） | 40 条标注、2 篇文档 20 chunks |
-| 并发压测 | 20×20 / 400 请求，p95 首 token **1457ms**、**11.46 req/s**（fake LLM + 关世界书；真实 bge 路径 6118ms） | `eval/report/loadtest-20261022-r1b-clean` |
+| 并发压测 | 服务链路：20×20 / 400 请求，p95 首 token **1457ms**、**11.46 req/s**（fake LLM + 关世界书）；真实检索路径：单请求 **3.0s**（M5 候选收敛 20→10 + 并发闸门 + 线程收敛，同日对照 −63%），20 并发 p95 首 token **−65%**，检索质量零回归 | `eval/report/loadtest-m5c2-*` |
 
-> 口径与保留项（`hit@3` 饱和、adversarial 只跑 sample、真实 bge 未优化）一并写在
+> 口径与保留项（`hit@3` 饱和、adversarial 只跑 sample、真实检索仍受 CPU 带宽限制）一并写在
 > [效果与评测](#效果与评测数字--样本--口径--出处) 表后，不藏。
 >
 > 关键设计决策见 [docs/adr](docs/adr/)（6 篇 ADR：隔离 / 编排 / 工具 / 检索 / 确定性）。
@@ -566,6 +566,7 @@ uv run python scripts/seed_loadtest.py --cleanup --prefix loadtest-20261022
 
 **口径与保留（必读）**
 
+- **M5 之后**：真实检索路径做过一轮专项（rerank 候选 20→10 + 并发闸门 + torch 线程收敛），单请求 8.1s→3.0s、20 并发 p95 首 token −65%，质量（hit@1/MRR）零回归；下文 6118ms 一行是 M5 **之前**的对照，保留作历史证据。
 - **1457/1470ms 是轻量栈**：fake LLM + fake embedding + 关世界书，只证明服务链路；真实 bge 路径早期对照是 6118ms（manifest `462f193`、dirty=true，**非 209371a 证据**）、真实冒烟首 token 11981ms。不得当作生产 SLA。
 - **余量小**：距 1500ms 只有 30–43ms，宿主噪声约 ±10%，早前同配置有 1485–1617ms 波动（E-01）。
 - **sample 4 不是全量零回归**：全量 adversarial（套件 40 条）与 `--suite all` 都未跑，结果只作冒烟；**E-02 按 sample-only 结项，本版不作全量零回归声明，跨版本比较仅限 sample 口径**；`eval/baseline/v2.4.json` 因无全量分母不冻结，对照仍用 `v2.3.json` / `v2.3-memory.json`（决策见 `doc/V2/Ai-agent-V2.5-收尾与对外表达-交接文档.md` §7.1）。
