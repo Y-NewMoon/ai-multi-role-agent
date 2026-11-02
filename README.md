@@ -9,13 +9,15 @@
 
 | 维度 | 现状 | 口径 |
 |---|---|---|
-| 自动化测试 | **591 collected**（49 条需真库的集成用例默认 skip） | `uv run pytest -q` |
+| 自动化测试 | **608 collected**（其中的真库集成用例在无 `TEST_DATABASE_URL` 时自动 skip） | `uv run pytest -q` |
 | 评测集 | **8 套 / 350 条**（golden 40 · scenario 80 · adversarial 40 · retrieval 60 · lore 40 · memory 40 · skill_use 30 · agentic_rag 20） | `eval/suites/` |
 | 检索质量 | hit@1 **0.85 → 0.90 → 0.975 → 1.00**（纯向量 → +关键词 → +重排 → +改写） | 40 条标注、2 篇文档 20 chunks |
 | 并发压测 | 20×20 / 400 请求，p95 首 token **1457ms**、**11.46 req/s**（fake LLM + 关世界书；真实 bge 路径 6118ms） | `eval/report/loadtest-20261022-r1b-clean` |
 
 > 口径与保留项（`hit@3` 饱和、adversarial 只跑 sample、真实 bge 未优化）一并写在
 > [效果与评测](#效果与评测数字--样本--口径--出处) 表后，不藏。
+>
+> 关键设计决策见 [docs/adr](docs/adr/)（6 篇 ADR：隔离 / 编排 / 工具 / 检索 / 确定性）。
 
 ## 演示
 
