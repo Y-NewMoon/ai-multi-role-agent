@@ -314,7 +314,7 @@ def _build_manifest(
     *, run_id: str, command: str, started_at: str, finished_at: str,
     report_sha: str | None, llm_provider: str, skipped: bool,
     health: dict | None = None, session_ids: list[int] | None = None,
-    cases_sha: str | None = None,
+    cases_sha: str | None = None, concurrency: int | None = None,
 ) -> dict:
     """§8.3 manifest：压测只允许 fake，usage 恒为 0（R8/R9）。"""
     health = health or {}
@@ -322,6 +322,8 @@ def _build_manifest(
     return {
         "run_id": run_id,
         "command": command,
+        # M5 手段①：真实并发 = 会话数（每会话一条 worker），顶层显式记录便于核对
+        "concurrency": concurrency if concurrency is not None else len(session_ids or []),
         "git_sha": _git_sha(),
         "git_dirty": _git_dirty(),
         "started_at": started_at,
@@ -505,6 +507,7 @@ def _emit(report: dict, *, args, provider: str, health: dict | None = None,
         skipped=False,
         health=health,
         session_ids=session_ids,
+        concurrency=len(session_ids or []),
     )
     # M0：manifest 自身也记本次 run 的核心指标，审查方无需跨文件拼口径
     manifest["metrics"] = {
@@ -562,6 +565,7 @@ def _emit_skipped(args, reason: str) -> int:
         report_sha=None,
         llm_provider="unknown",
         skipped=True,
+        concurrency=args.concurrency,
     )
     _write_outputs(out_path=args.out_path, report=report, manifest=manifest, skipped=True)
     print(f"[load_test] skipped：{reason}", file=sys.stderr)
@@ -589,10 +593,12 @@ def main(argv: list[str] | None = None) -> int:
     if not session_ids:
         print("[load_test] --session-ids 不能为空", file=sys.stderr)
         return 2
-    if len(session_ids) < args.concurrency:
+    # M5 手段①：真实并发 = 会话数（每会话一条 worker，见 _run 的 asyncio.gather）。
+    # `--concurrency` 只用于校验/展示，必须与会话数严格相等，否则“以为 4 并发、实际 20”。
+    if args.concurrency != len(session_ids):
         print(
-            f"[load_test] session 数不足：需要 {args.concurrency} 个不同会话，"
-            f"实际 {len(session_ids)} 个（同会话会被 B-02 串行）",
+            f"[load_test] --concurrency={args.concurrency} 与 session 数 {len(session_ids)} 不一致："
+            "真实并发等于会话数，请用 --session-ids 控制（同会话会被 B-02 串行）",
             file=sys.stderr,
         )
         return 2
