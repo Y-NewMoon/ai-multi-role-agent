@@ -9,8 +9,10 @@
 """
 
 import asyncio
+import importlib.util
 import threading
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -119,3 +121,28 @@ async def test_gate_released_on_compute_error() -> None:
     assert ok is True
     assert [ref for ref, _ in result] == ["a:01", "b:01"]
     assert probe.calls == 2
+
+
+def test_probe_applies_and_reports_torch_threads() -> None:
+    """M5 手段②（T0.1/T5）：探针按配置收敛 torch 线程，并记录**实际生效值**。
+
+    探针是独立进程，若不显式设置就跑 torch 默认 24 线程，轨道 A 测的不是线上配置。
+    """
+    import torch
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "probe_lore_latency.py"
+    spec = importlib.util.spec_from_file_location("probe_lore_latency", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+
+    class _Settings:
+        lore_torch_threads = 8
+
+    original = torch.get_num_threads()
+    try:
+        threads, interop = module.configure_torch_threads(_Settings())
+        assert threads == 8
+        assert interop == 1
+    finally:
+        torch.set_num_threads(original)

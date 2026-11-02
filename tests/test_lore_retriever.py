@@ -5,6 +5,7 @@
 
 import asyncio
 import hashlib
+import inspect
 
 import pytest
 from langchain_core.embeddings import Embeddings
@@ -15,6 +16,7 @@ from app.agents.nodes.retrieve_lore import _history, retrieve_lore
 from app.db.models import Agent, LoreChunk, LoreDoc
 from app.lore.indexer import Indexer
 from app.lore.retriever import (
+    TOP_K,
     LlmRewriter,
     NullReranker,
     Retriever,
@@ -334,3 +336,16 @@ async def test_rewrite_recent_drops_duplicate_current_query(tmp_path) -> None:
     assert out == "改写结果"
     assert llm.messages is not None
     assert llm.messages[1]["content"].count("她说的那家") == 1
+
+
+def test_lore_top_k_default_is_10() -> None:
+    """M5 手段②（T5）：`LORE_TOP_K` 默认值锁死为 10，防止被悄悄改回 20。
+
+    改默认值必须有 dev/test 双分片无下降的质量证据（`eval/report/m5c2-quality.md`）；
+    20→10 已经把单次 rerank 的候选对数减半（探针 rerank_ms p50 ≈ −64%）。
+    """
+    from app.config import Settings
+
+    assert Settings.model_fields["lore_top_k"].default == 10
+    assert TOP_K == 10
+    assert inspect.signature(Retriever.__init__).parameters["top_k"].default == 10
