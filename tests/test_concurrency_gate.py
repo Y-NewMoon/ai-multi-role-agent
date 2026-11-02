@@ -127,8 +127,11 @@ def test_probe_applies_and_reports_torch_threads() -> None:
     """M5 手段②（T0.1/T5）：探针按配置收敛 torch 线程，并记录**实际生效值**。
 
     探针是独立进程，若不显式设置就跑 torch 默认 24 线程，轨道 A 测的不是线上配置。
+
+    CI 设置了 `UV_NO_GROUP=embeddings`（不装 torch / sentence-transformers，省 2.5GB），
+    此时本用例无法验证真实线程数，`skip` 而不是失败；本地装了 embeddings 组则正常执行。
     """
-    import torch
+    torch = pytest.importorskip("torch", reason="CI 不安装 embeddings 组（无 torch），本用例仅在本地验证")
 
     path = Path(__file__).resolve().parents[1] / "scripts" / "probe_lore_latency.py"
     spec = importlib.util.spec_from_file_location("probe_lore_latency", path)
