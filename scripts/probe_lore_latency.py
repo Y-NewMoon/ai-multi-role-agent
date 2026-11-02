@@ -10,6 +10,8 @@
 
 约束：
 - `EMBEDDING_PROVIDER=fake` 时 **exit 2**（fake 向量不能产出“真实链路”结论）；
+- 启动时按 `settings.lore_torch_threads` 收敛 torch 线程（与 server 同一配置，M5 手段② T0.1）；
+  产物记录实际生效的 `torch_threads` / `torch_interop_threads`；
 - 开启改写（`LORE_QUERY_REWRITE=true`）时要求 `LLM_PROVIDER=fake`，否则拒绝（0 真实 token）；
 - 预热样本不进统计，只保留在 `warmup_samples` 供“首次 vs 预热后”对比；
 - 产物 JSON 带 git/嵌入/重排/查询等可复现字段；控制台打印分段 × p50/p95/max 表。
@@ -62,6 +64,30 @@ def _git_dirty() -> bool:
         return bool(out.stdout.strip())
     except Exception:  # noqa: BLE001
         return False
+
+
+def configure_torch_threads(settings) -> tuple[int | None, int | None]:
+    """M5 手段② T0.1：按 `settings.lore_torch_threads` 收敛 torch 线程。
+
+    与 server 的 `_configure_torch_threads` 同一口径（探针是独立进程，否则跑的是
+    torch 默认 24 线程，轨道 A 测的不是线上配置）。返回 (intra-op, interop)
+    **实际生效值**；torch 不可用时均为 None。
+    """
+    try:
+        import torch
+    except Exception:  # noqa: BLE001 - 未安装 torch（fake 嵌入）时基线无意义
+        return None, None
+    threads = settings.lore_torch_threads
+    if threads is not None:
+        try:
+            torch.set_num_threads(threads)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[probe] torch.set_num_threads({threads}) 失败：{exc}", file=sys.stderr)
+        try:
+            torch.set_num_interop_threads(1)
+        except Exception as exc:  # noqa: BLE001 - 并行工作已开始时跳过
+            print(f"[probe] torch.set_num_interop_threads(1) 跳过：{exc}", file=sys.stderr)
+    return torch.get_num_threads(), torch.get_num_interop_threads()
 
 
 def percentile(values: list[float], p: float) -> float | None:
@@ -170,6 +196,12 @@ async def _run(args: argparse.Namespace) -> int:
         return 2
 
     queries = list(args.query) if args.query else list(DEFAULT_QUERIES)
+    # T0.1：先收敛线程再加载模型（模型加载后再设置线程无效）
+    torch_threads, torch_interop_threads = configure_torch_threads(settings)
+    print(
+        f"[probe] torch threads = {torch_threads}, interop = {torch_interop_threads}"
+        f"（配置 lore_torch_threads={settings.lore_torch_threads}）"
+    )
     dsn = args.dsn or settings.database_url
     engine = create_engine(settings._to_psycopg(dsn))
     session_factory = create_session_factory(engine)
@@ -229,6 +261,10 @@ async def _run(args: argparse.Namespace) -> int:
             settings.embedding_model if settings.embedding_provider == "local" else None
         ),
         "rerank_model": RERANK_MODEL,
+        # T0.1：实际生效的 torch 线程数（与 server 同配置；非 null 才能证明口径一致）
+        "torch_threads": torch_threads,
+        "torch_interop_threads": torch_interop_threads,
+        "lore_torch_threads": settings.lore_torch_threads,
         "rerank_max_tokens": settings.lore_rerank_max_tokens,
         "lore_top_k": settings.lore_top_k,
         "rerank_available": rerank_available,
