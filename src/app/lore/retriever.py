@@ -28,8 +28,8 @@ from app.lore.keywords import cut
 
 # RRF 常数（契约 4.5）
 RRF_K = 60
-# 单路 / 融合后进入 rerank 的条数上限（契约 4.4/4.5）
-TOP_K = 20
+# 单路 / 融合后进入 rerank 的条数上限（契约 4.4/4.5；M5 手段②：20→10）
+TOP_K = 10
 # 代词（契约 4.6）
 PRONOUNS = ("这", "那", "她", "他", "它", "其")
 REWRITE_MIN_LEN = 8

@@ -141,7 +141,7 @@ npm run dev                                # http://localhost:5173
 | `LORE_MAX_RATIO` | `0.20` | 检索 lore 段占 prompt 预算的比例 |
 | `LORE_ALWAYS_ON_RATIO` | `0.08` | always-on（核心设定）段占 prompt 预算的比例 |
 | `LORE_QUERY_REWRITE` | `true` | 查询改写开关（含代词、过短，或上一轮有未消解指代时触发；CI 与单测用 false） |
-| `LORE_TOP_K` | `20` | 单路召回与融合后进入 rerank 的条数上限 |
+| `LORE_TOP_K` | `10` | 单路召回与融合后进入 rerank 的条数上限（M5 手段②由 20 收敛到 10） |
 | `LORE_STATIC_MODE` | `full` | V2.2 静态注入模式：`full`（V2.1 行为，全量检索）/ `always_on`（只注入核心设定，不走向量/关键词/rerank）/ `off`（不注入）；供 agentic RAG 三策略对比 |
 | `LORE_CONCURRENCY_GATE_ENABLED` | `true` | rerank/embed 并发闸门总开关；`false` = 恢复改造前行为（无闸门，`*_queue_ms` 恒为 0） |
 | `LORE_RERANK_CONCURRENCY` | `2` | 同时在跑的 rerank 调用数（跨请求）；**≤0 启动即报错** |

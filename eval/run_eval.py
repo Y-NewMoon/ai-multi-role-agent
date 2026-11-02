@@ -629,7 +629,7 @@ async def _run_retrieval_lore(cases: list[dict], settings, *, force_inmemory: bo
             embedder=embed,
             reranker=BgeReranker(max_tokens=settings.lore_rerank_max_tokens),
             rewrite_enabled=False,  # 评测固定关闭查询改写，保证可复现
-            top_k=settings.lore_top_k,  # 默认 20；消融实验用 LORE_TOP_K 生效
+            top_k=settings.lore_top_k,  # M5 手段②默认 10；消融实验用 LORE_TOP_K 生效
         )
         return await lore_eval.run(cases, retriever)
     finally:

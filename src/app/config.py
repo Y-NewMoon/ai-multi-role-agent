@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     lore_max_ratio: float = 0.20  # 检索 lore 段预算占比（契约 4.7）
     lore_always_on_ratio: float = 0.08  # always-on 段预算占比（契约 4.7）
     lore_query_rewrite: bool = True  # 查询改写开关（CI 与单测用 false）
-    lore_top_k: int = 20  # 单路召回与融合后进入 rerank 的条数
+    lore_top_k: int = 10  # 单路召回与融合后进入 rerank 的条数（M5 手段②：20→10，质量对照见 eval/report/m5c2-quality.md）
     # doc 侧 token 截断上限（None=不截断，行为与 M5-P0 前完全一致）；仅消融实验设置
     lore_rerank_max_tokens: int | None = None
 
